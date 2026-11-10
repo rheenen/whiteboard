@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { isStringValue } from "@dev.fast/json";
 import {
   type BlobBatchReader,
   type LocalVcs,
@@ -77,6 +78,7 @@ import {
 import { z } from "zod";
 
 import { checkoutFs } from "./checkout-fs.js";
+import { evidenceIn } from "./code-evidence.js";
 import {
   type ComparisonCoverage,
   comparisonCoverage,
@@ -1000,7 +1002,26 @@ export class LocalReviewData {
       repositoryId: boardRepositoryId(snapshot),
     })) {
       try {
-        await this.quote(anchorPins(reference.source, pins), reference.source);
+        const at = anchorPins(reference.source, pins);
+        await this.quote(at, reference.source);
+
+        // A diagram's link also names text that must be in its lines: one
+        // whose text moved away is stale too, though its lines exist.
+        const evidence =
+          "evidence" in reference ? reference.evidence : undefined;
+
+        if (isStringValue(evidence)) {
+          const { side, file, fromLine, toLine } = reference.source;
+
+          const state = evidenceIn(
+            (await this.file(at, side, file)).text,
+            fromLine,
+            toLine,
+            evidence,
+          );
+
+          if (!state.holds) projected.staleSources!.push(reference.id);
+        }
       } catch (error) {
         if (!(error instanceof ReviewInputError)) throw error;
         projected.staleSources!.push(reference.id);

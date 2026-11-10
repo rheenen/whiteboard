@@ -1,0 +1,27 @@
+[
+  {
+    "key": "overview",
+    "title": "Two weeks",
+    "label": "TWO WEEKS",
+    "caption": "Checkout latency over two weeks: p50 and p95 by day."
+  },
+  {
+    "key": "regression",
+    "title": "Regression",
+    "label": "REGRESSION",
+    "caption": "Deploy #482 doubles p95 and lifts p50 by half, for four days."
+  },
+  {
+    "key": "cause",
+    "title": "Cause",
+    "label": "CAUSE",
+    "caption": "Almost all of it is one endpoint: tax calculation.",
+    "code": ["latency-query"]
+  },
+  {
+    "key": "fix",
+    "title": "Fix",
+    "label": "FIX",
+    "caption": "Reverting the deploy brings both back to where they were."
+  }
+]

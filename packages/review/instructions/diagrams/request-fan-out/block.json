@@ -1,0 +1,66 @@
+{
+  "title": "Playing an episode",
+  "description": "What one Play request touches, step by step, and how a search differs.",
+  "code": {
+    "web-app": {
+      "source": "head/apps/web/src/main.tsx#L1-L12",
+      "evidence": "createRoot(",
+      "label": "Web app"
+    },
+    "tv-app": {
+      "source": "head/apps/tv/src/main/kotlin/App.kt#L5-L20",
+      "evidence": "class App",
+      "label": "TV app"
+    },
+    "gateway": {
+      "source": "head/platform/gateway/routes.go#L9-L30",
+      "evidence": "func Routes(",
+      "label": "Gateway routes"
+    },
+    "playback": {
+      "source": "head/platform/playback/server.go#L14-L40",
+      "evidence": "func (s *Server) Manifest(",
+      "label": "Playback API"
+    },
+    "catalog": {
+      "source": "head/platform/catalog/src/server.ts#L8-L30",
+      "evidence": "export function createServer(",
+      "label": "Catalog API"
+    },
+    "accounts": {
+      "source": "head/platform/accounts/schema.sql#L1-L20",
+      "evidence": "CREATE TABLE accounts",
+      "label": "Accounts table"
+    },
+    "web-search": {
+      "source": "head/apps/web/src/search.ts#L9",
+      "evidence": "fetch(`/api/search",
+      "label": "Web searches"
+    },
+    "tv-play": {
+      "source": "head/apps/tv/src/main/kotlin/Player.kt#L6",
+      "evidence": "api.get<PlaybackResponse>(",
+      "label": "TV asks to play"
+    },
+    "gateway-manifest": {
+      "source": "head/platform/gateway/play.go#L22",
+      "evidence": "playback.Manifest(",
+      "label": "Gateway asks Playback"
+    },
+    "gateway-title": {
+      "source": "head/platform/gateway/play.go#L23",
+      "evidence": "catalog.Title(",
+      "label": "Gateway asks Catalog"
+    },
+    "gateway-search": {
+      "source": "head/platform/gateway/browse.go#L17",
+      "evidence": "catalog.Search(",
+      "label": "Gateway searches"
+    },
+    "playback-plan": {
+      "source": "head/platform/playback/plan.go#L31",
+      "evidence": "SELECT plan FROM accounts",
+      "label": "Playback reads the plan"
+    }
+  }
+}

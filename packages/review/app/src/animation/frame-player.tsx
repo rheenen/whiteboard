@@ -29,16 +29,31 @@ import type {
   StagePlayer,
   StageSend,
 } from "./stage-player";
-import type { StageMessage } from "./stage-protocol";
+import type { StageMessage, StageMove } from "./stage-protocol";
+import { FrameControls } from "./timeline-controls";
 
 const DEFAULT_DURATION = 3000;
 
 const sameKeys = (left: readonly string[], right: readonly string[] | null) =>
   right?.length === left.length && left.every((key, i) => key === right[i]);
 
+type AnimationNode = BlockProps<"animation">["node"];
+
+/** What the player reads: an animation's frames and scenarios, or a
+ * diagram's, whose frames may carry moves for its stage. */
+export interface FramesNode {
+  frames: readonly (AnimationNode["frames"][number] & {
+    moves?: StageMove[];
+  })[];
+  scenarios?: AnimationNode["scenarios"];
+}
+
+/** A diagram's frames (`track`) get the player a diagram's timeline has, a
+ * track of frames under the stage, in place of the strip and the footer. */
 export function useFramePlayer(
-  node: BlockProps<"animation">["node"],
+  node: FramesNode,
   send: StageSend,
+  { track = false }: { track?: boolean } = {},
 ): StagePlayer {
   const frames = node.frames;
   const [index, setIndex] = useState(0);
@@ -198,12 +213,13 @@ export function useFramePlayer(
 
     return {
       mode: "frames" as const,
-      frames: frames.map(({ key, title, caption, data, code }) => ({
+      frames: frames.map(({ key, title, caption, data, code, moves }) => ({
         key,
         title,
         caption,
         data,
         code,
+        ...(moves && { moves }),
       })),
       markers: [],
       scenarios: [],
@@ -287,7 +303,19 @@ export function useFramePlayer(
 
   const steps = activeFrames.every((item) => item.label) ? activeFrames : null;
 
-  return {
+  const toggle = () => {
+    if (playing) return setPlaying(false);
+
+    // Replay starts the first frame's clock over.
+    if (activeIndex >= last) {
+      heldRef.current = { index: -1, fraction: 0 };
+      go(0, true);
+    }
+
+    setPlaying(true);
+  };
+
+  const player: StagePlayer = {
     stops: activeFrames,
     activeIndex,
     pick,
@@ -328,17 +356,7 @@ export function useFramePlayer(
         </ControlButton>
         <ControlButton
           label={playing ? "Pause" : activeIndex >= last ? "Replay" : "Play"}
-          onClick={() => {
-            if (playing) return setPlaying(false);
-
-            // Replay starts the first frame's clock over.
-            if (activeIndex >= last) {
-              heldRef.current = { index: -1, fraction: 0 };
-              go(0, true);
-            }
-
-            setPlaying(true);
-          }}
+          onClick={toggle}
         >
           {playing ? pauseIcon : playIcon}
         </ControlButton>
@@ -365,6 +383,44 @@ export function useFramePlayer(
         )}
       </>
     ),
+  };
+
+  if (!track) return player;
+
+  return {
+    ...player,
+    strip: null,
+    afterStage: (
+      <FrameControls
+        frames={activeFrames.map((item) => ({
+          ...item,
+          title: item.label ?? item.title,
+        }))}
+        activeIndex={activeIndex}
+        playing={playing}
+        timer={timer}
+        onToggle={toggle}
+        onPick={(position) => pick(position, "controls")}
+        // A frame whose moves send tokens along wires plays them once; the
+        // reader replays them.
+        onReplay={
+          activeFrames[activeIndex]?.moves?.length
+            ? () => send({ type: "replay" })
+            : undefined
+        }
+      />
+    ),
+    controls: null,
+    // Space plays or pauses when the figure itself has focus, and the arrows
+    // step, as they do in the player.
+    onFigureKeyDown(event) {
+      if (event.target !== event.currentTarget) return;
+
+      if (event.key === " ") {
+        event.preventDefault();
+        toggle();
+      } else player.onKeyDown(event);
+    },
   };
 }
 

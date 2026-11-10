@@ -183,6 +183,12 @@ const rendered: Record<
       c,
       "[data-animation-slot='code'] .fixture-inline-editor[data-path='order.ts']",
     ) && text(c).includes("Status queued"),
+  // A diagram's stage runs its script with wb; its steps list under it and
+  // its code makes it verifiable.
+  diagram: (c) =>
+    has(c, "iframe[title='Order status']") &&
+    text(c).includes("SENT") &&
+    text(c).includes("Verify"),
 };
 
 let canvas: ReturnType<typeof mount> | undefined;

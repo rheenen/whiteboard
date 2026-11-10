@@ -1,0 +1,99 @@
+[
+  {
+    "key": "old-click",
+    "title": "Save calls the handler",
+    "label": "CLICK",
+    "moves": [
+      {
+        "from": "click",
+        "to": "handler"
+      }
+    ]
+  },
+  {
+    "key": "old-save",
+    "title": "The handler saves",
+    "label": "SAVE",
+    "code": ["call-save"],
+    "moves": [
+      {
+        "from": "handler",
+        "to": "save"
+      }
+    ]
+  },
+  {
+    "key": "old-write",
+    "title": "Save writes the row itself",
+    "label": "WRITE",
+    "code": ["old-write"],
+    "moves": [
+      {
+        "from": "save",
+        "to": "db",
+        "label": "UPDATE"
+      }
+    ]
+  },
+  {
+    "key": "new-click",
+    "title": "Save calls the handler",
+    "label": "CLICK",
+    "moves": [
+      {
+        "from": "click",
+        "to": "handler"
+      }
+    ]
+  },
+  {
+    "key": "new-validate",
+    "title": "The handler validates first",
+    "label": "VALIDATE",
+    "caption": "New: bad input stops here.",
+    "code": ["call-validate"],
+    "moves": [
+      {
+        "from": "handler",
+        "to": "validate"
+      }
+    ]
+  },
+  {
+    "key": "new-save",
+    "title": "Then saves",
+    "label": "SAVE",
+    "code": ["call-save"],
+    "moves": [
+      {
+        "from": "handler",
+        "to": "save"
+      }
+    ]
+  },
+  {
+    "key": "new-repository",
+    "title": "Save goes through the repository",
+    "label": "REPOSITORY",
+    "code": ["call-repository"],
+    "moves": [
+      {
+        "from": "save",
+        "to": "repository"
+      }
+    ]
+  },
+  {
+    "key": "new-write",
+    "title": "The repository writes the row",
+    "label": "WRITE",
+    "code": ["write"],
+    "moves": [
+      {
+        "from": "repository",
+        "to": "db",
+        "label": "UPSERT"
+      }
+    ]
+  }
+]

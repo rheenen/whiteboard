@@ -1,0 +1,56 @@
+{
+  "title": "Saving settings, before and after",
+  "description": "The change puts validation and a repository between the form and the database.",
+  "code": {
+    "on-save": {
+      "source": "head/src/settings/form.tsx#L40-L58",
+      "evidence": "function onSave(",
+      "label": "onSave"
+    },
+    "validate": {
+      "source": "head/src/settings/validate.ts#L5-L30",
+      "evidence": "export function validateSettings(",
+      "label": "validateSettings"
+    },
+    "save": {
+      "source": "head/src/settings/save.ts#L8-L25",
+      "evidence": "export async function saveSettings(",
+      "label": "saveSettings"
+    },
+    "repository": {
+      "source": "head/src/settings/repository.ts#L12-L34",
+      "evidence": "put(",
+      "label": "SettingsRepository.put"
+    },
+    "table": {
+      "source": "head/src/settings/schema.sql#L1-L8",
+      "evidence": "CREATE TABLE settings",
+      "label": "settings table"
+    },
+    "call-validate": {
+      "source": "head/src/settings/form.tsx#L44",
+      "evidence": "validateSettings(",
+      "label": "Calls validate"
+    },
+    "call-save": {
+      "source": "head/src/settings/form.tsx#L49",
+      "evidence": "saveSettings(",
+      "label": "Calls save"
+    },
+    "old-write": {
+      "source": "base/src/settings/save.ts#L14",
+      "evidence": "db.run(\"UPDATE settings",
+      "label": "Old direct write"
+    },
+    "call-repository": {
+      "source": "head/src/settings/save.ts#L17",
+      "evidence": "repository.put(",
+      "label": "Calls the repository"
+    },
+    "write": {
+      "source": "head/src/settings/repository.ts#L22",
+      "evidence": "INSERT INTO settings",
+      "label": "Upsert"
+    }
+  }
+}

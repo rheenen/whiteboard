@@ -48,16 +48,49 @@ export type RenderAnimation = (
   request: RenderRequest,
 ) => Promise<RenderedFrame>;
 
-/** The stop a render shows: a frame of an animation, or a marker of a clip. */
+/** The stop a render shows: a frame of an animation or diagram, a marker
+ * of a clip, a chapter of a played diagram, or a still diagram whole. */
 export interface RenderTarget {
-  type: "animation" | "clip";
+  type: "animation" | "clip" | "diagram";
   key: string;
 }
 
-type StageBlock = Extract<Element, { type: "animation" | "clip" }>;
+type StageBlock = Extract<Element, { type: "animation" | "clip" | "diagram" }>;
+
+/** The one stop a diagram without frames or a timeline renders at. */
+export const STILL_STOP = "diagram";
 
 const isStageBlock = (element: Element): element is StageBlock =>
-  element.type === "animation" || element.type === "clip";
+  element.type === "animation" ||
+  element.type === "clip" ||
+  element.type === "diagram";
+
+/** A stage block's stops in order, what one is called, and the first a
+ * reader sees. */
+function stopsOf(target: StageBlock) {
+  if (target.type === "clip") {
+    const keys = target.markers.map((marker) => marker.key);
+
+    return { noun: "marker", keys, first: keys[0] };
+  }
+
+  if (target.type === "diagram" && target.timeline) {
+    const keys = target.timeline.chapters.map((chapter) => chapter.key);
+
+    return { noun: "chapter", keys, first: keys[0] };
+  }
+
+  if (target.type === "diagram" && !target.frames)
+    return { noun: "frame", keys: [STILL_STOP], first: STILL_STOP };
+
+  const keys = (target.frames ?? []).map((item) => item.key);
+
+  return {
+    noun: "frame",
+    keys,
+    first: target.scenarios?.[0]?.frames[0] ?? keys[0],
+  };
+}
 
 /** The stop to render: `frame` checked against the block's frames or markers, or
  * the first stop of the first scenario when omitted. */
@@ -75,22 +108,12 @@ export function renderTarget(
 
   if (!isStageBlock(target))
     throw new ReviewInputError(
-      `${targetId} is a ${target.type}; only an animation or a clip renders a frame.`,
+      `${targetId} is a ${target.type}; only an animation, a clip or a diagram renders a frame.`,
     );
 
-  const noun = target.type === "clip" ? "marker" : "frame";
-
-  const keys =
-    target.type === "clip"
-      ? target.markers.map((marker) => marker.key)
-      : target.frames.map((item) => item.key);
+  const { noun, keys, first } = stopsOf(target);
 
   if (frame === undefined) {
-    const first =
-      target.type === "animation"
-        ? (target.scenarios?.[0]?.frames[0] ?? keys[0])
-        : keys[0];
-
     if (first === undefined)
       throw new ReviewInputError(`${targetId} has no ${noun}s to render.`);
 

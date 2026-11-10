@@ -177,14 +177,14 @@ export function authoringTools(
       ? [
           tool(
             "checkout",
-            "Write an animation or clip to a folder of files to edit with your own file tools: animation.html (its html), frames.json (an animation's frames, each with its data) or markers.json (a clip's markers), scenarios.json and block.json (title, code, height, pins). Then publish the folder with review_edit, giving fromFiles instead of content or changes. dir defaults to a folder Whiteboard manages; checking out again overwrites it. A publish is refused if the block changed after the checkout.",
+            "Write a diagram, animation or clip to a folder of files to edit with your own file tools. A diagram's: diagram.js (its script), frames.json (its steps, each with its moves), scenarios.json and block.json (title, description, code, stage, timeline, pins). An animation's or clip's: animation.html, frames.json or markers.json, scenarios.json and block.json (title, code, height, pins). Then publish the folder with review_edit, giving fromFiles instead of content or changes. dir defaults to a folder Whiteboard manages; checking out again overwrites it. A publish is refused if the block changed after the checkout.",
             z.strictObject({ ...review, targetId: id, dir: id.optional() }),
             "GET",
             "/:reviewId/inspect",
           ),
           tool(
             "render",
-            "See an animation or clip as the reader does: Desktop shows one of its frames (frame: a frame key, or a clip's marker key; omitted, the first) on the open whiteboard and returns it as a PNG image, with the error its script threw, if any. The PNG is also written to the path the result names. After publishing, render each frame you changed and look at it, instead of taking screenshots of the screen. The whiteboard must be open in Desktop: review_create opens it, and review_open opens an existing one.",
+            "See a diagram, animation or clip as the reader does: Desktop shows one of its frames (frame: a frame key, a clip's marker key or a diagram's chapter key; omitted, the first) on the open whiteboard and returns it as a PNG image, with the error its script threw, if any. A diagram's result also lists its findings (overlaps, moves without a wire, unknown code names) and how its claims about the code stand. The PNG is also written to the path the result names. After publishing, render each frame you changed and look at it, instead of taking screenshots of the screen. The whiteboard must be open in Desktop: review_create opens it, and review_open opens an existing one.",
             z.strictObject({ ...review, targetId: id, frame: id.optional() }),
             "GET",
             "/:reviewId/render",
@@ -251,7 +251,7 @@ function withDraftFiles(edit: ReturnType<typeof publishedEdits>) {
     .string()
     .min(1)
     .describe(
-      "An animation's or clip's draft folder, from review_checkout or written yourself: publishes its files as the content (insert, replace) or changes (update). frames.json makes it an animation, markers.json a clip.",
+      "A diagram's, animation's or clip's draft folder, from review_checkout or written yourself: publishes its files as the content (insert, replace) or changes (update). diagram.js makes it a diagram, frames.json with animation.html an animation, markers.json a clip.",
     );
 
   const [insert, replace, update, move, remove] = edit.options;

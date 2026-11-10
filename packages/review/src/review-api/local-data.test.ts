@@ -3526,6 +3526,55 @@ it("recovers persisted stale source and clears flags on set_target", async () =>
   expect(local.store.read(created.reviewId).staleSources).toEqual([]);
 });
 
+it("marks a diagram's code link stale once its evidence leaves the lines, though they exist", async () => {
+  const original = "const first = 1;\nexport function save() {}\n";
+  writeFileSync(path.join(repository, "evidence.ts"), original);
+  git("add", "-N", "evidence.ts");
+
+  const created = await local.store.execute(
+    command({
+      type: "create",
+      title: "Evidence",
+      target: {
+        kind: "worktree",
+        repositoryId: pins.repositoryId,
+        base: pins.head,
+      },
+    }),
+  );
+
+  const { targetId } = await insert(created.reviewId, {
+    type: "diagram",
+    title: "Saving",
+    script:
+      'wb.node({ id: "save", kind: "component", label: "save", code: "save" });',
+    code: {
+      save: {
+        source: "head/evidence.ts#L2",
+        evidence: "function save(",
+      },
+    },
+  });
+
+  expect(local.store.read(created.reviewId).staleSources ?? []).toEqual([]);
+
+  // Line 2 is still there, but the function moved below it.
+  writeFileSync(
+    path.join(repository, "evidence.ts"),
+    "const first = 1;\nconst second = 2;\nexport function save() {}\n",
+  );
+  await watcherLatency();
+  await local.store.refreshWorktrees();
+  expect(local.store.read(created.reviewId).staleSources).toEqual([
+    `${targetId}:code:save`,
+  ]);
+
+  writeFileSync(path.join(repository, "evidence.ts"), original);
+  await watcherLatency();
+  await local.store.refreshWorktrees();
+  expect(local.store.read(created.reviewId).staleSources).toEqual([]);
+});
+
 it("does not report clean tracked symlinks and submodules as modified", async () => {
   symlinkSync("example.ts", path.join(repository, "tracked-link.ts"));
   const modulePath = path.join(directory, "module");

@@ -78,6 +78,7 @@ import {
 } from "./animation-render.js";
 import type { AskRecord } from "./ask-history.js";
 import { authoringTools } from "./authoring-tools.js";
+import { diagramEvidenceProblems, editedDiagrams } from "./code-evidence.js";
 import { documentText } from "./document-text.js";
 import { instructionsQuerySchema, renderInstructions } from "./instructions.js";
 import type { LocalReviewData } from "./local-data.js";
@@ -93,6 +94,7 @@ import {
   type ReviewRequestVia,
   reviewRequestOrigin,
 } from "./request-origin.js";
+import { refuseRetiredBlocks } from "./retired-blocks.js";
 import {
   legacyModeSchema,
   progressUpdateSchema,
@@ -2116,11 +2118,22 @@ export function createReviewApi(
       frame: target.key,
     });
 
+    // A diagram's canvas reports what its stage found drawn wrong and how
+    // its claims stand when it runs; the render passes the latest on.
+    const run =
+      target.type === "diagram"
+        ? store.animationRunsOf(id).get(query.targetId)
+        : undefined;
+
     return context.json({
       reviewId: id,
       targetId: query.targetId,
       type: target.type,
       ...rendered,
+      ...(run && {
+        findings: run.findings ?? [],
+        ...(run.claims && { claims: run.claims }),
+      }),
     });
   });
   app.get("/:id", async (context) => {
@@ -2209,14 +2222,14 @@ export function createReviewApi(
           : undefined;
 
       const animated = (type: string | undefined) =>
-        type === "animation" || type === "clip";
+        type === "animation" || type === "clip" || type === "diagram";
 
       if (
         incoming.some((element) => animated(element.type)) ||
         animated(target?.type)
       )
         throw new ReviewInputError(
-          "Animation authoring is disabled. Enable Animations in Settings under Experimental Features to edit animations and clips. Existing ones can still be viewed.",
+          "Animation authoring is disabled. Enable Animations in Settings under Experimental Features to edit diagrams, animations and clips. Existing ones can still be viewed.",
           409,
         );
     }
@@ -2236,6 +2249,37 @@ export function createReviewApi(
             kind: "agent",
             ...(threadId && { threadId }),
           };
+
+    if (input.operation.type === "edit") {
+      const { edit, reviewId } = input.operation;
+      const snapshot = readReview(reviewId);
+
+      // With diagrams on, agents draw them instead of the kinds they replace.
+      if (author.kind === "agent" && animationsEnabled())
+        refuseRetiredBlocks(edit, snapshot.document);
+
+      // A diagram's code links must hold when they are written.
+      if (data) {
+        const problems = (
+          await Promise.all(
+            editedDiagrams(edit, snapshot.document).map((diagram) =>
+              diagramEvidenceProblems(
+                diagram,
+                snapshot.pins,
+                async (pins, side, file) =>
+                  (await data.file(pins, side, file)).text,
+              ),
+            ),
+          )
+        ).flat();
+
+        if (problems.length)
+          throw new ReviewInputError(
+            `Some of the diagram's code links do not hold: their evidence is not inside their lines.\n${problems.join("\n")}\nFix the anchors or the evidence in block.json and publish again.`,
+            409,
+          );
+      }
+    }
 
     // A link's kept commits go when its last copy is deleted for good.
     const copy =

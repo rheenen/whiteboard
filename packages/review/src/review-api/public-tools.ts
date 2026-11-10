@@ -14,6 +14,7 @@ import {
 import {
   type ReadBlock,
   checkoutAnimation,
+  diagramReferenceText,
   recordPublish,
   resolveDraftEdit,
   stageReferenceText,
@@ -133,9 +134,17 @@ export async function callPublicTool(
     return withoutRepositoryIds(block);
   };
 
-  if (tool.name === "session_get_instructions" && rest.topic === "animation") {
+  if (
+    tool.name === "session_get_instructions" &&
+    (rest.topic === "animation" || rest.topic === "diagram")
+  ) {
     const instructions = await callAuthoringTool(client, tool, fields, signal);
-    const hint = stageReferenceText(await writeStageReference());
+    const reference = await writeStageReference();
+
+    const hint =
+      rest.topic === "diagram"
+        ? diagramReferenceText(reference)
+        : stageReferenceText(reference);
 
     if (instructions instanceof ToolText)
       return new ToolText(`${instructions.text}\n\n${hint}`);

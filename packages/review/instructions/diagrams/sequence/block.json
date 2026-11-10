@@ -1,0 +1,51 @@
+{
+  "title": "Logging in",
+  "description": "The calls a login makes, in order.",
+  "code": {
+    "login-form": {
+      "source": "head/web/src/LoginForm.tsx#L20-L44",
+      "evidence": "function LoginForm(",
+      "label": "Login form"
+    },
+    "login-handler": {
+      "source": "head/api/login.go#L15-L60",
+      "evidence": "func Login(",
+      "label": "Login handler"
+    },
+    "verify": {
+      "source": "head/auth/verify.go#L10-L35",
+      "evidence": "func Verify(",
+      "label": "Verify"
+    },
+    "session-store": {
+      "source": "head/api/sessions.go#L8-L20",
+      "evidence": "type SessionStore",
+      "label": "Session store"
+    },
+    "audit-topic": {
+      "source": "head/api/audit.go#L5",
+      "evidence": "\"audit.login\"",
+      "label": "Audit topic"
+    },
+    "submit": {
+      "source": "head/web/src/LoginForm.tsx#L31",
+      "evidence": "fetch(\"/login\"",
+      "label": "Submit"
+    },
+    "call-verify": {
+      "source": "head/api/login.go#L28",
+      "evidence": "auth.Verify(",
+      "label": "Call verify"
+    },
+    "save-session": {
+      "source": "head/api/login.go#L41",
+      "evidence": "sessions.Save(",
+      "label": "Save the session"
+    },
+    "publish-login": {
+      "source": "head/api/login.go#L47",
+      "evidence": "audit.Publish(",
+      "label": "Publish the login"
+    }
+  }
+}
