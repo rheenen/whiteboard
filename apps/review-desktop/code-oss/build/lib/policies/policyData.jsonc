@@ -613,7 +613,7 @@
                 }
             },
             "type": "boolean",
-            "default": true,
+            "default": false,
             "included": true
         }
     ]

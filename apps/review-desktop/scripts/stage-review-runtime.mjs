@@ -8,6 +8,7 @@ import {
   realpath,
   rm,
   stat,
+  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -141,6 +142,11 @@ export async function stageReviewRuntime(packagedRoot) {
   );
 
   await stageReviewDocs(runtimeRoot);
+  // This build ships with sharing off; see packages/review/src/sharing/disabled.ts.
+  await writeFile(
+    path.join(runtimeRoot, "sharing-policy.json"),
+    `${JSON.stringify({ sharing: "disabled" })}\n`,
+  );
   console.log("[runtime pruning]", await pruneReviewRuntime(runtimeRoot));
   await assertRuntimeClosure(runtimeRoot);
 

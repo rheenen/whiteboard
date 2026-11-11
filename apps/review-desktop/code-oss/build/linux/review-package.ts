@@ -30,18 +30,19 @@ export interface ReviewPackage {
 
 /** Derive the Fedora package identity from the stamped release channel. */
 export function reviewPackage(product: ReviewPackageProduct, version: string, revision = process.env.REVIEW_LINUX_PACKAGE_REVISION ?? '1'): ReviewPackage {
-	const match = /^(\d+\.\d+\.\d+)(?:-(preview\.\d{8}\.\d+))?$/.exec(version);
+	const match = /^(\d+\.\d+\.\d+)(?:-(preview\.\d{8}\.\d+)|-(rh\.\d+))?$/.exec(version);
 	if (!match || !/^[1-9]\d*$/.test(revision)) {
-		throw new Error('Linux repository packages require an X.Y.Z or X.Y.Z-preview.YYYYMMDD.N version and positive package revision');
+		throw new Error('Linux repository packages require an X.Y.Z, X.Y.Z-rh.N or X.Y.Z-preview.YYYYMMDD.N version and positive package revision');
 	}
-	const [, release, prerelease] = match;
+	const [, release, prerelease, fork] = match;
 	if (product.quality !== (prerelease ? 'preview' : 'stable')) {
 		throw new Error(`Linux payload quality ${JSON.stringify(product.quality)} does not match version ${version}`);
 	}
 	if (!/^[a-z][a-z0-9-]*$/.test(product.applicationName)) {
 		throw new Error('Linux packages need a lowercase applicationName');
 	}
-	const rpmVersion = prerelease ? `${release}~${prerelease}` : release;
+	// A fork build sorts after its upstream release and before the next one.
+	const rpmVersion = prerelease ? `${release}~${prerelease}` : fork ? `${release}+${fork}` : release;
 	const name = `whiteboard${prerelease ? '-preview' : ''}`;
 	return {
 		name,
@@ -286,7 +287,7 @@ Architecture: amd64
 Section: devel
 Priority: optional
 Installed-Size: ${installedSize}
-Maintainer: dev.fast <support@dev.fast>
+Maintainer: Martijn van Rheenen <699043+rheenen@users.noreply.github.com>
 Homepage: https://dev.fast/
 Depends: ${dependencies}
 Provides: ${pkg.legacyName} (= ${pkg.rpmVersion}-${pkg.revision})

@@ -132,14 +132,14 @@ configurationRegistry.registerConfiguration({
 		},
 		[REVIEW_TELEMETRY_SETTING]: {
 			type: 'boolean',
-			default: true,
+			default: reviewConfigurationDefaults[REVIEW_TELEMETRY_SETTING],
 			description: localize('review.telemetry.enabled', "Send anonymous Whiteboard usage data."),
 		},
 		[REVIEW_SHARING_SETTING]: {
 			type: 'boolean',
 			default: reviewConfigurationDefaults[REVIEW_SHARING_SETTING],
 			scope: ConfigurationScope.APPLICATION,
-			description: localize('review.sharing.enabled', "Allow signing in and sharing whiteboards as links. Exporting and opening .whiteboard files always works. Turning sharing on again takes effect after Whiteboard restarts."),
+			description: localize('review.sharing.enabled', "Allow signing in and sharing whiteboards as links. Exporting and opening .whiteboard files always works. This build also ships sharing-policy.json, which keeps sharing off until an administrator changes it."),
 			policy: {
 				name: 'WhiteboardSharingEnabled',
 				category: PolicyCategory.Telemetry,
