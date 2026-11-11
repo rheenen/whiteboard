@@ -15,7 +15,7 @@ import { drainReviewBootstrapBreadcrumbs } from "../node/reviewBootstrapBreadcru
 export interface ReviewMainErrorTelemetryOptions {
   /** Resolves with the loopback endpoint and token of the embedded server. */
   readonly whenConnected: () => Promise<ReviewDesktopConnection>;
-  /** Reads `review.telemetry.enabled` at the moment of the error. */
+  /** Whether telemetry is on at the moment of the error. */
   readonly isTelemetryEnabled: () => boolean;
   /**
    * The Electron user data directory, where a crash that happened before the

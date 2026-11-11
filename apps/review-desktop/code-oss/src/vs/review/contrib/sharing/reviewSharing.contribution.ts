@@ -10,7 +10,6 @@ import {
 	Severity,
 } from "../../../platform/notification/common/notification.js";
 import { IProgressService, ProgressLocation } from "../../../platform/progress/common/progress.js";
-import { IQuickInputService } from "../../../platform/quickinput/common/quickInput.js";
 import { IURLService, type IURLHandler } from "../../../platform/url/common/url.js";
 import {
 	registerWorkbenchContribution2,
@@ -93,31 +92,6 @@ registerWorkbenchContribution2(
 	"review.sharing.urls",
 	SharedReviewUrlHandler,
 	WorkbenchPhase.BlockRestore,
-);
-registerAction2(
-	class extends Action2 {
-		constructor() {
-			super({
-				id: "whiteboard.openSharedSession",
-				title: localize2("whiteboard.openSharedSession", "Open Shared Session"),
-				f1: true,
-			});
-		}
-		async run(accessor: ServicesAccessor) {
-			const session = accessor.get(IReviewDesktopConnectionService),
-				tabs = accessor.get(IReviewCanvasEditorTabsService),
-				notifications = accessor.get(INotificationService),
-				progress = accessor.get(IProgressService);
-			const url = await accessor
-				.get(IQuickInputService)
-				.input({
-					prompt: "Paste a Whiteboard share link",
-					placeHolder: "https://app.dev.fast/s/…",
-					ignoreFocusLost: true,
-				});
-			if (url) await openShare({ url }, session, tabs, notifications, progress);
-		}
-	},
 );
 registerAction2(
 	class extends Action2 {

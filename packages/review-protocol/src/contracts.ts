@@ -862,8 +862,8 @@ export interface ReviewDiffrConfigActions {
 }
 
 export interface ReviewCanvasSettingsContent {
-  // Backed by the `review.telemetry.enabled` workbench setting, which the
-  // review server and the CLI both read.
+  // Whether this build sends usage data. A build without a telemetry setting
+  // reports false and ignores the setter.
   telemetryEnabled: boolean;
   setTelemetryEnabled(enabled: boolean): Promise<boolean>;
   // A `colorThemes` id.

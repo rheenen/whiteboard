@@ -600,21 +600,6 @@
             "type": "boolean",
             "default": true,
             "included": true
-        },
-        {
-            "key": "review.sharing.enabled",
-            "name": "WhiteboardSharingEnabled",
-            "category": "Telemetry",
-            "minimumVersion": "1.129",
-            "localization": {
-                "description": {
-                    "key": "review.sharing.enabled.policy",
-                    "value": "Allow Whiteboard to sign in and share whiteboards as links."
-                }
-            },
-            "type": "boolean",
-            "default": false,
-            "included": true
         }
     ]
 }

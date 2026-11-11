@@ -20,7 +20,6 @@ import type {
 import * as stylex from "@stylexjs/stylex";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
-import { AccountSection } from "./account-section";
 import { ConnectCard, LegacySkillsRow } from "./connect-card";
 import { DiffrConfigSection } from "./diffr-config-section";
 import { homeStyles } from "./home-styles";
@@ -97,10 +96,6 @@ export function SettingsPage({
 }: {
   settings: ReviewCanvasSettingsContent;
 }) {
-  const [telemetryEnabled, setTelemetryEnabled] = useState(
-    settings.telemetryEnabled,
-  );
-
   const [theme, setTheme] = useState(settings.theme);
   const [diffTheme, setDiffTheme] = useState(settings.diffTheme);
   const [colorThemes, setColorThemes] = useState(settings.colorThemes);
@@ -176,10 +171,8 @@ export function SettingsPage({
   const contents = useMemo(
     () =>
       [
-        "Account",
         ...(agents ? ["Agents"] : []),
         ...(commandLine ? ["Command line"] : []),
-        "Privacy",
         "Appearance",
         "Editor",
         "Notifications",
@@ -215,8 +208,6 @@ export function SettingsPage({
             <p {...stylex.props(styles.lede)}>
               Settings apply to Whiteboard on this machine.
             </p>
-
-            <AccountSection request={settings.request} />
 
             {install ? (
               <Section label="Agents">
@@ -259,29 +250,6 @@ export function SettingsPage({
                 </Row>
               </Section>
             ) : null}
-
-            <Section label="Privacy">
-              <Row
-                label="Share anonymous usage data"
-                description="Counts and timings only. Never code, file paths, or repository names."
-              >
-                <label
-                  {...stylex.props(styles.toggle)}
-                  aria-label="Share anonymous usage data"
-                >
-                  <Checkbox
-                    checked={telemetryEnabled}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      void run(
-                        () => settings.setTelemetryEnabled(enabled),
-                        setTelemetryEnabled,
-                      );
-                    }}
-                  />
-                </label>
-              </Row>
-            </Section>
 
             <Section label="Appearance">
               <Row label="Theme" description="How Whiteboard looks.">

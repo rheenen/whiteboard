@@ -5,6 +5,15 @@ page covers what stays local, what Whiteboard sends, and what you choose to
 share. The [dev.fast privacy policy](https://dev.fast/privacy) is the policy
 governing Whiteboard.
 
+## This build
+
+This build of Whiteboard sends no telemetry, no error reports and no crash
+dumps, and has no setting to turn them on. Sharing is always off: the Share
+button, sign-in and the Desktop sharing setting are gone, and the runtime ships
+a `sharing-policy.json` that turns sharing off for the server, the CLI and the
+agent trace hooks. Exporting and opening `.whiteboard` files still work. The
+sections below describe what the upstream Whiteboard does.
+
 ## What stays local
 
 Whiteboard keeps whiteboards, including copies opened from share links, in
@@ -26,7 +35,8 @@ crash dump, which can contain process memory, including open source text. It
 is kept for 30 days.
 
 To turn both off, open Settings and disable **Share anonymous usage data**, or
-set `DO_NOT_TRACK=1`. With telemetry off, crash dumps are deleted without
+set `DO_NOT_TRACK=1`. This build has no such setting and needs neither,
+because it never sends them. With telemetry off, crash dumps are deleted without
 upload. The [telemetry reference](telemetry.md) lists every event.
 
 ## Bug reports
@@ -62,7 +72,9 @@ An installation can turn sharing off in any of these ways:
 - put a `sharing-policy.json` file that holds `{"sharing": "disabled"}` next to
   the runtime's `package.json`. In a system install, make it root-owned;
 - in Desktop, turn off the `review.sharing.enabled` setting, or set the
-  `WhiteboardSharingEnabled` policy to false.
+  `WhiteboardSharingEnabled` policy to false. This build has no such setting:
+  its Desktop always tells the server, the CLI and remote hosts that sharing
+  is off.
 
 Off always wins: no source can turn sharing on again while another one turns it
 off. A policy file that Whiteboard cannot read or parse also turns sharing off.

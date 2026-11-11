@@ -71,7 +71,7 @@ import {
 	REVIEW_READY_NOTIFICATION_SETTING,
 	REVIEW_SHOW_RELEASE_NOTES_SETTING,
 	REVIEW_SOFTWARE_MAP_SETTING,
-	REVIEW_TELEMETRY_SETTING,
+	REVIEW_TELEMETRY_ENABLED,
 } from "../../../common/reviewConfigurationDefaults.js";
 import { fetchWhiteboardReleases, REVIEW_SHOW_RELEASE_NOTES_COMMAND_ID } from "../../../common/reviewReleaseNotes.js";
 import { ReviewApiClient, type ReviewApiSummary, resolveReviewSourceView, reviewSourceAnchor, type ReviewSourceView, type ReviewSourceSelection } from "../../../common/reviewProtocol.js";
@@ -1003,17 +1003,8 @@ export class ReviewCanvasEditorPane extends EditorPane {
 	private async resolveSettingsContent(): Promise<ReviewCanvasSettingsContent> {
 		return {
 			telemetryEnabled: this.currentTelemetryEnabled(),
-			setTelemetryEnabled: async (enabled) => {
-				this.reviewTelemetryService.capture("setting_changed", {
-					setting: "telemetry_enabled",
-					enabled,
-				});
-				if (!enabled) {
-					await this.reviewTelemetryService.flush();
-				}
-				await this.configurationService.updateValue(REVIEW_TELEMETRY_SETTING, enabled, ConfigurationTarget.USER);
-				return this.currentTelemetryEnabled();
-			},
+			// This build has no telemetry setting; the Settings page shows no toggle.
+			setTelemetryEnabled: async () => false,
 			// Auto-detect can come back with imported VS Code settings; then show the theme on screen.
 			theme: this.configurationService.getValue<boolean>("window.autoDetectColorScheme")
 				? this.reviewThemeService.getColorTheme().settingsId
@@ -1242,9 +1233,8 @@ export class ReviewCanvasEditorPane extends EditorPane {
 		return this.currentShowReleaseNotes();
 	}
 
-	// The setting ships as true, so only an explicit false means opted out.
 	private currentTelemetryEnabled(): boolean {
-		return this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !== false;
+		return REVIEW_TELEMETRY_ENABLED;
 	}
 
 	/**

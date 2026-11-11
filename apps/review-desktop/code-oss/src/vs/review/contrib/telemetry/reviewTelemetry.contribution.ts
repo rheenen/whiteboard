@@ -15,6 +15,7 @@ import {
 	type IWorkbenchContributionsRegistry,
 } from '../../../workbench/common/contributions.js';
 import { LifecyclePhase } from '../../../workbench/services/lifecycle/common/lifecycle.js';
+import { REVIEW_TELEMETRY_ENABLED } from '../../common/reviewConfigurationDefaults.js';
 import { isFirstRunReloadPending } from '../../common/reviewFirstRunReload.js';
 import { IReviewCanvasEditorTabsService } from '../../services/reviewCanvasEditorTabsService.js';
 
@@ -77,6 +78,9 @@ export class ReviewTelemetryNotice implements IWorkbenchContribution {
 	}
 }
 
-Registry.as<IWorkbenchContributionsRegistry>(
-	WorkbenchExtensions.Workbench,
-).registerWorkbenchContribution(ReviewTelemetryNotice, LifecyclePhase.Restored);
+// This build sends no usage data, so it never shows the notice.
+if (REVIEW_TELEMETRY_ENABLED) {
+	Registry.as<IWorkbenchContributionsRegistry>(
+		WorkbenchExtensions.Workbench,
+	).registerWorkbenchContribution(ReviewTelemetryNotice, LifecyclePhase.Restored);
+}

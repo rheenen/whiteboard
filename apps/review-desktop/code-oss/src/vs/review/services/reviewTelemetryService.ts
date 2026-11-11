@@ -3,10 +3,9 @@
  *  Licensed under the MIT License. See LICENSE in the repository root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IConfigurationService } from "../../platform/configuration/common/configuration.js";
 import { createDecorator } from "../../platform/instantiation/common/instantiation.js";
 import { ILifecycleService } from "../../workbench/services/lifecycle/common/lifecycle.js";
-import { REVIEW_TELEMETRY_SETTING } from "../common/reviewConfigurationDefaults.js";
+import { REVIEW_TELEMETRY_ENABLED } from "../common/reviewConfigurationDefaults.js";
 import type { ReviewErrorReport } from "../common/reviewErrorReport.js";
 import { reviewTelemetryEventRequest } from "../common/reviewTelemetryRequest.js";
 import { IReviewDesktopConnectionService, type ReviewServerConnection } from "./reviewDesktopConnectionService.js";
@@ -54,8 +53,6 @@ export class ReviewTelemetryService implements IReviewTelemetryService {
 
 	constructor(
 		@IReviewDesktopConnectionService desktopConnection: IReviewDesktopConnectionService,
-		@IConfigurationService
-		private readonly configurationService: IConfigurationService,
 		@ILifecycleService lifecycleService: ILifecycleService,
 	) {
 		this.connectionPromise = desktopConnection
@@ -78,7 +75,7 @@ export class ReviewTelemetryService implements IReviewTelemetryService {
 	}
 
 	capture(name: string, properties?: ReviewTelemetryProperties, error?: ReviewErrorReport, context?: unknown): void {
-		if (this.configurationService.getValue(REVIEW_TELEMETRY_SETTING) === false) {
+		if (!REVIEW_TELEMETRY_ENABLED) {
 			return;
 		}
 		const event = { name, properties, ...(error ? { error } : {}), ...(context ? { context } : {}), occurredAt: Date.now() };

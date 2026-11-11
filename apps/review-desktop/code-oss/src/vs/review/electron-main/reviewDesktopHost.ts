@@ -33,8 +33,8 @@ import {
   REVIEW_REMOTE_INSTALL_MODES,
   REVIEW_REMOTE_INSTALL_SETTING,
   REVIEW_SERVICE_URL_SETTING,
-  REVIEW_SHARING_SETTING,
-  REVIEW_TELEMETRY_SETTING,
+  REVIEW_SHARING_ENABLED,
+  REVIEW_TELEMETRY_ENABLED,
 } from "../common/reviewConfigurationDefaults.js";
 import { remoteHostAliases } from "../common/reviewSshAlias.js";
 import {
@@ -150,11 +150,9 @@ export class ReviewDesktopHost extends Disposable {
             this.lifecycleMainService,
           ),
         telemetryEnabled:
-          this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-          false,
+          REVIEW_TELEMETRY_ENABLED,
         sharingEnabled:
-          this.configurationService.getValue<boolean>(REVIEW_SHARING_SETTING) !==
-          false,
+          REVIEW_SHARING_ENABLED,
         serviceOrigin: this.configurationService
           .getValue<string>(REVIEW_SERVICE_URL_SETTING)
           ?.trim(),
@@ -174,22 +172,6 @@ export class ReviewDesktopHost extends Disposable {
         callback(reviewLoopbackCertVerdict(request, fingerprint)),
       );
     this._register(
-      this.configurationService.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration(REVIEW_SHARING_SETTING))
-          this.supervisor.setSharingEnabled(
-            this.configurationService.getValue<boolean>(
-              REVIEW_SHARING_SETTING,
-            ) !== false,
-          );
-        if (!event.affectsConfiguration(REVIEW_TELEMETRY_SETTING)) return;
-        this.supervisor.setTelemetryEnabled(
-          this.configurationService.getValue<boolean>(
-            REVIEW_TELEMETRY_SETTING,
-          ) !== false,
-        );
-      }),
-    );
-    this._register(
       this.lifecycleMainService.onWillShutdown((event) => {
         event.join("reviewDesktopHost", this.supervisor.stop());
         if (this.remoteHosts)
@@ -208,8 +190,7 @@ export class ReviewDesktopHost extends Disposable {
     errorTelemetry = new ReviewMainErrorTelemetry({
       whenConnected: () => this.whenConnected(),
       isTelemetryEnabled: () =>
-        this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-        false,
+        REVIEW_TELEMETRY_ENABLED,
       userDataPath: this.environmentMainService.userDataPath,
       logError: (message) => this.logService.error(message),
     });
@@ -225,8 +206,7 @@ export class ReviewDesktopHost extends Disposable {
       },
       whenConnected: () => this.whenConnected(),
       isTelemetryEnabled: () =>
-        this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-        false,
+        REVIEW_TELEMETRY_ENABLED,
       logError: (message) => this.logService.error(message),
     });
     crashTelemetry = this._register(
@@ -247,9 +227,7 @@ export class ReviewDesktopHost extends Disposable {
         storageService: this.applicationStorageMainService,
         telemetry: mainTelemetry,
         isTelemetryEnabled: () =>
-          this.configurationService.getValue<boolean>(
-            REVIEW_TELEMETRY_SETTING,
-          ) !== false,
+          REVIEW_TELEMETRY_ENABLED,
         shipItLogPath: this.productService.darwinBundleIdentifier
           ? darwinShipItLogPath(
               this.environmentMainService.userHome.fsPath,
@@ -411,8 +389,7 @@ export class ReviewDesktopHost extends Disposable {
       groups: () =>
         reviewEnabledExtensionGroups(this.environmentMainService.extensionsPath),
       sharingEnabled: () =>
-        this.configurationService.getValue<boolean>(REVIEW_SHARING_SETTING) !==
-        false,
+        REVIEW_SHARING_ENABLED,
       send: (hosts) => this.supervisor.setRemoteHosts(hosts),
       capture,
       log: (message) => this.logService.info(`[Remote hosts] ${message}`),
