@@ -2140,14 +2140,13 @@ it("opens a flow node in a full-screen tour with all its code attachments", asyn
   expect(
     await settled(
       () =>
-        container.querySelectorAll(
-          '[role="dialog"] > :last-child .fixture-inline-editor',
-        ).length === 2,
+        container.querySelectorAll('[role="dialog"] .fixture-inline-editor')
+          .length === 2,
     ),
   ).toBe(true);
-  expect(
-    container.querySelector('[role="dialog"] > :last-child')?.textContent,
-  ).toContain("Validation");
+  expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Validation",
+  );
   expect(
     container.querySelector('[role="dialog"][aria-modal="true"]'),
   ).not.toBeNull();

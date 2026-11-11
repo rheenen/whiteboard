@@ -450,6 +450,7 @@ export function AgentSelectionProvider({
             />
             <div
               ref={actions}
+              data-agent-selection-actions=""
               {...stylex.props(surfaceStyles.popover, styles.actions)}
               onMouseDown={(event) => {
                 // The composer takes focus; the actions keep the selection.

@@ -51,6 +51,42 @@ it("captures exact prose and its anchor, clears collapsed selections, and ignore
   }
 });
 
+it("keeps the selection while a comment is written in its actions", () => {
+  const article = document.createElement("article");
+  article.innerHTML =
+    "<p data-review-copy-prose>before <strong>selected words</strong> after</p>";
+  const actions = document.createElement("div");
+  actions.setAttribute("data-agent-selection-actions", "");
+  actions.innerHTML = '<textarea aria-label="Comment"></textarea>';
+  document.body.append(article, actions);
+  const select = vi.fn<Parameters<typeof observeAgentTextSelection>[1]>();
+  const stop = observeAgentTextSelection(article, select);
+  const selection = document.getSelection()!;
+  const range = document.createRange();
+  range.selectNodeContents(article.querySelector("strong")!);
+  Object.defineProperty(range, "getClientRects", {
+    value: () => [{ left: 20, right: 120, top: 50, bottom: 70 }],
+  });
+
+  try {
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(select).toHaveBeenCalledTimes(1);
+
+    // The comment box takes focus, and with it the document's selection.
+    actions.querySelector("textarea")!.focus();
+    selection.removeAllRanges();
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(select).toHaveBeenCalledTimes(1);
+  } finally {
+    stop();
+    selection.removeAllRanges();
+    article.remove();
+    actions.remove();
+  }
+});
+
 it.each([
   '<figure class="sequence-diagram"><span>sequence actor</span></figure>',
   '<figure class="database-lens"><span>Orders</span></figure>',

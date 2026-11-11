@@ -1433,7 +1433,7 @@ function StepComments({
       {panels ? (
         <IconButton
           size="small"
-          aria-label={`Comment on ${stop.label}`}
+          aria-label={`Add comment on ${stop.label}`}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
 

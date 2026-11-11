@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 
 import { DiagramCommentScope } from "./board-comments";
 import { DiagramHeader } from "./diagram-header";
+import { useOfferPartComment } from "./diagram-part-comment";
 import { diagramStyles } from "./diagram-styles";
 import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour";
 import { drawStyles } from "./draw-styles";
@@ -102,10 +103,14 @@ export function FlowDiagram({
     (stop) => stop.anchor.id === (selection?.anchor ?? inlineAnchor),
   )?.nodeKey;
 
+  const offerComment = useOfferPartComment(tour);
+
   const open = (nodeKey?: string) => {
     const anchor = (
       nodeKey ? stops.find((stop) => stop.nodeKey === nodeKey) : stops[0]
     )?.anchor.id;
+
+    if (nodeKey && anchor) offerComment(anchor);
 
     if (nodeKey && anchor && selectInline(anchor)) return;
 

@@ -46,6 +46,7 @@ import { createPortal } from "react-dom";
 import { DiagramCommentScope, DiagramPartPin } from "./board-comments";
 import { useReviewDebugSettings } from "./debug-settings";
 import { DiagramHeader } from "./diagram-header";
+import { useOfferPartComment } from "./diagram-part-comment";
 import { diagramStyles } from "./diagram-styles";
 import { hasTextSelectionWithin } from "./diagram-text-selection";
 import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour";
@@ -325,10 +326,13 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
     figureRef,
   } = useDiagramSelection(tour, tourOpen);
 
+  const offerComment = useOfferPartComment(tour);
+
   const openTour = useCallback(
     (anchor?: string) => {
       if (anchor) {
         captureUiEvent(session, "peek_opened", { via: "diagram" });
+        offerComment(anchor);
       }
 
       if (anchor && selectInline(anchor)) return;
@@ -345,7 +349,15 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
         .getState()
         .openOverlayTour({ tourId: tour.id, kind: "sequence" }, nextAnchor);
     },
-    [panelStore, session, tour, tourAnchor, tourOpen, selectInline],
+    [
+      panelStore,
+      session,
+      tour,
+      tourAnchor,
+      tourOpen,
+      selectInline,
+      offerComment,
+    ],
   );
 
   const { closeOverlayTour: closeTour, moveOverlayTour: changeTourAnchor } =
