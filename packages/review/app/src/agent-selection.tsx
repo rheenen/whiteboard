@@ -502,11 +502,17 @@ export function AgentSelectionProvider({
                   </span>
                 </form>
               ) : null}
+              {!commenting && panels ? (
+                <Button variant="primary" onClick={() => setCommenting(true)}>
+                  <PencilIcon xstyle={iconStyles.inline} />
+                  <span>Add comment</span>
+                </Button>
+              ) : null}
               {!commenting && askAgents && askAgent ? (
                 <>
                   <span {...stylex.props(styles.split)}>
                     <Button
-                      variant="primary"
+                      variant="secondary"
                       aria-keyshortcuts="Meta+L"
                       onClick={() => ask()}
                       xstyle={canChooseAgent && styles.splitMain}
@@ -519,7 +525,7 @@ export function AgentSelectionProvider({
                     </Button>
                     {canChooseAgent ? (
                       <Button
-                        variant="primary"
+                        variant="secondary"
                         aria-label="Ask another agent"
                         aria-haspopup="menu"
                         aria-expanded={choosing}
@@ -545,12 +551,6 @@ export function AgentSelectionProvider({
                     />
                   ) : null}
                 </>
-              ) : null}
-              {!commenting && panels ? (
-                <Button variant="ghost" onClick={() => setCommenting(true)}>
-                  <PencilIcon xstyle={iconStyles.inline} />
-                  <span>Add comment</span>
-                </Button>
               ) : null}
               {!commenting ? (
                 <Button
@@ -615,8 +615,8 @@ const styles = stylex.create({
     justifyContent: "flex-end",
     gap: space.s4,
   },
-  // Ask and its agent menu are one split button; the fill sets it apart from
-  // Copy, so the toolbar needs no divider with or without the menu.
+  // Ask and its agent menu are one split button. Add comment comes first and
+  // is filled; Ask then has a border, and its two halves share one edge.
   split: {
     display: "inline-flex",
   },
@@ -629,7 +629,7 @@ const styles = stylex.create({
     padding: 0,
     borderTopLeftRadius: 0,
     borderBottomLeftRadius: 0,
-    boxShadow: `inset 1px 0 0 color-mix(in srgb, ${tokens.onAccent} 28%, transparent)`,
+    borderLeftWidth: 0,
   },
   chevron: {
     transition: {

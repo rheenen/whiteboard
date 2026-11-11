@@ -16,7 +16,7 @@ import "./styles.css";
 
 // Vite inlines the fixture files, one array of blocks per kind.
 const fixtureFiles = import.meta.glob<{ default: JsonValue }>(
-  "../../src/fixtures/blocks/{flow_diagram,sequence}.json",
+  "../../src/fixtures/blocks/{call_stack_diff,flow_diagram,sequence}.json",
   { eager: true },
 );
 
@@ -28,6 +28,8 @@ const fixture = (kind: string): Snapshot["document"] =>
 const flowBlocks = fixture("flow_diagram");
 
 const sequenceBlocks = fixture("sequence");
+
+const callTreeBlocks = fixture("call_stack_diff");
 
 interface Posted {
   body: string;
@@ -145,6 +147,8 @@ async function addComment(text: string) {
   );
 
   expect(add, "the click offers Add comment").toBeTruthy();
+  // Add comment is the first action, ahead of Ask and Copy ref.
+  expect(add!.parentElement!.querySelector("button")).toBe(add);
   await userEvent.click(add!);
 
   const field = await settled(() =>
@@ -270,4 +274,31 @@ it("comments on an expanded diagram's step with its pencil", async () => {
     part: { blockId: "flow-1" },
   });
   expect(posted[0]!.part!.id.startsWith("flow-1:request")).toBe(true);
+});
+
+it("comments on the code behind a call in a call tree", async () => {
+  const { container, posted } = await mountBoard(callTreeBlocks, false);
+
+  const call = await settled(() =>
+    container.querySelector('nav[aria-label="Call tree"] button'),
+  );
+
+  await click(call!);
+  await addComment("Why queued here?");
+
+  await settled(() => posted.length > 0);
+  expect(posted[0]).toMatchObject({
+    body: "Why queued here?",
+    selection: { target: { kind: "code", path: "order.ts", startLine: 1 } },
+    part: { blockId: "block-1" },
+  });
+
+  expect(
+    await settled(() =>
+      container.querySelector(
+        'nav[aria-label="Call tree"] button[aria-label^="Comment on"]',
+      ),
+    ),
+    "the call shows a comment icon",
+  ).toBeTruthy();
 });

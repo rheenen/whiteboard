@@ -26,10 +26,10 @@ or code link to open its source.
 ## Comment on the review
 
 Select a passage of the whiteboard or lines of code, then choose **Add
-comment**. To comment on a part of a diagram, select the node or message and
-choose **Add comment**, or expand the diagram and select the pencil beside a
-step. The comment is on the code behind that part, or on the diagram when the
-part has no code.
+comment**. To comment on a part of a diagram, or on a call in a call tree,
+select the node, message or call and choose **Add comment**. In an expanded
+diagram, you can also select the pencil beside a step. The comment is on the
+code behind that part, or on the diagram when the part has no code.
 
 A comment icon marks each open comment: after its passage, at the corner of
 its block or diagram part, and in the gutter beside its code. Select the icon
