@@ -14,7 +14,10 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { exportShare } from "./export.js";
 import { importShare, shareKey, validateShareBundle } from "./import.js";
-import { fetchPinnedRepository } from "./repository.js";
+import { fetchPinnedRepository, sharedProtocols } from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const cleanup: Array<() => Promise<void>> = [];
 

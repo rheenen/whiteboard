@@ -7,6 +7,7 @@ import { type JsonObject, type JsonValue } from "@dev.fast/review-protocol";
 import {
   type ShareBundle,
   capabilitySchema,
+  repositoryLabel,
   shareBundleSchema,
 } from "@dev.fast/review-share-protocol";
 import {
@@ -161,12 +162,6 @@ export function validateShareBundle(input: ShareBundle) {
   // Every commit it quotes reaches git as an argument.
   assertCommitIds(referenceCommits(snapshot));
 
-  if (needsRepository(bundle, snapshot) && !bundle.repository)
-    throw new ReviewInputError(
-      "This share can only be viewed in the browser.",
-      409,
-    );
-
   const maps = z.record(z.string(), mapSchema).parse(bundle.maps);
 
   if (!snapshot.pins && Object.keys(maps).length)
@@ -242,6 +237,9 @@ export interface ShareImport {
   fetchRepository?: typeof fetchPinnedRepository;
   cloneRepository?: typeof cloneSharedRepository;
   onStage?: (stage: "fetching" | "validating") => void;
+  /** A file is opened on a checkout the reader already has, never on a
+   * clone: whoever wrote it chose its remote. */
+  fromFile?: boolean;
 }
 
 export const FRESH_IMPORT_VERSION = 0;
@@ -339,18 +337,23 @@ export async function importShare(
   const { store, data } = input;
   const { bundle, snapshot, maps } = validateShareBundle(received);
   const cloneUrl = bundle.repository?.cloneUrl;
+  const remote = cloneUrl ?? bundle.remote?.url;
+  const needed = needsRepository(bundle, snapshot);
   let repositoryId: string | undefined;
+
+  if (needed && !remote && !input.fromFile)
+    throw new ReviewInputError(
+      "This share can only be viewed in the browser.",
+      409,
+    );
 
   // A document is filed on a checkout the receiver already has; it is not
   // worth a clone.
-  if (
-    cloneUrl &&
-    (needsRepository(bundle, snapshot) || store.checkoutsOf(cloneUrl).length)
-  ) {
+  if (needed || (remote && store.checkoutsOfRemote(remote).length)) {
     input.onStage?.("fetching");
     repositoryId = await shareRepository(
       input,
-      cloneUrl,
+      { cloneUrl, remote },
       snapshot.pins,
       referenceCommits(snapshot),
       key,
@@ -425,7 +428,7 @@ export async function importShare(
     document: JSON.parse(document),
     lenses: snapshot.lenses,
     origin: snapshot.origin,
-    shared: { ...provenance, cloneUrl, key },
+    shared: { ...provenance, ...(remote && { cloneUrl: remote }), key },
     copiedFrom: snapshot.reviewId,
   };
 
@@ -436,16 +439,78 @@ export async function importShare(
   return reviewId;
 }
 
+/** Whether the checkout at `root` already holds every commit. */
+async function holdsCommits(root: string, commits: readonly string[]) {
+  try {
+    for (const commit of commits)
+      await sharedGit(root, ["cat-file", "-e", { rev: `${commit}^{commit}` }]);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A checkout of the share's repository with every commit it reads at: the
- * receiver's own when they have one, else one Desktop clones. */
+ * receiver's own when they have one. Otherwise a file opens on a checkout
+ * that already holds every commit, and a link's GitHub repository is cloned
+ * by Desktop. */
 async function shareRepository(
-  { store, data, ...git }: ShareImport,
-  cloneUrl: string,
+  input: ShareImport,
+  { cloneUrl, remote }: { cloneUrl?: string; remote?: string },
   pins: Pick<Pins, "base" | "head"> | undefined,
   commits: string[],
   key: string,
 ) {
-  const root = path.join(devReviewHome(), "shared-repositories");
+  const { store } = input;
+  const all = [...(pins ? [pins.base, pins.head] : []), ...commits];
+
+  const matches = remote ? store.checkoutsOfRemote(remote) : [];
+  const shared = await realpath(sharedRoot()).catch(() => sharedRoot());
+
+  const managed = (id: string) =>
+    store.repositoryPath(id).startsWith(shared + path.sep);
+
+  // A link prefers the receiver's own checkout over Desktop's clone; a file
+  // takes either.
+  let repositoryId =
+    matches.find((id) => !managed(id)) ??
+    (input.fromFile ? matches[0] : undefined);
+
+  if (!repositoryId && input.fromFile && all.length)
+    for (const { id, path: root } of store.repositories())
+      if (existsSync(root) && (await holdsCommits(root, all))) {
+        repositoryId = id;
+        break;
+      }
+
+  if (!repositoryId && cloneUrl && !input.fromFile)
+    repositoryId = await managedRepository(input, cloneUrl, pins, commits);
+
+  if (!repositoryId)
+    throw new ReviewInputError(
+      remote
+        ? `Open a checkout of ${repositoryLabel(remote) ?? remote} in Whiteboard first, then open this file again.`
+        : "Open a checkout of this whiteboard's repository in Whiteboard first, then open this file again.",
+      409,
+    );
+
+  // Only from the checkout's own origin, with its owner's credentials.
+  await fetchSharedCommits(store.repositoryPath(repositoryId), all, key);
+
+  return repositoryId;
+}
+
+const sharedRoot = () => path.join(devReviewHome(), "shared-repositories");
+
+/** Desktop's clone of a link's GitHub repository. */
+async function managedRepository(
+  { store, data, ...git }: ShareImport,
+  cloneUrl: string,
+  pins: Pick<Pins, "base" | "head"> | undefined,
+  commits: string[],
+) {
+  const root = sharedRoot();
 
   await mkdir(root, { recursive: true, mode: 0o700 });
 
@@ -460,15 +525,11 @@ async function shareRepository(
     `${safeStorageSegment(name || "repository")}-${createHash("sha256").update(cloneUrl).digest("hex").slice(0, 8)}`,
   );
 
-  const own = store
-    .checkoutsOf(cloneUrl)
-    .find((id) => store.repositoryPath(id) !== managed);
-
   const cloned = store
     .repositories()
-    .some((repository) => repository.path === managed);
+    .find((repository) => repository.path === managed);
 
-  if (!own && !(cloned && existsSync(path.join(managed, ".git")))) {
+  if (!(cloned && existsSync(path.join(managed, ".git")))) {
     await rm(managed, { recursive: true, force: true });
 
     try {
@@ -492,13 +553,5 @@ async function shareRepository(
     }
   }
 
-  const repositoryId = own ?? (await data.register(managed)).id;
-
-  await fetchSharedCommits(
-    store.repositoryPath(repositoryId),
-    [...(pins ? [pins.base, pins.head] : []), ...commits],
-    key,
-  );
-
-  return repositoryId;
+  return cloned?.id ?? (await data.register(managed)).id;
 }

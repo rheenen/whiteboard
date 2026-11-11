@@ -215,9 +215,14 @@ it("rejects source-dependent content disguised as a document-only share", async 
       ],
     },
   ]) {
-    expect(() =>
-      validateShareBundle({ ...bundle, snapshot: { ...snapshot, ...extra } }),
-    ).toThrow(/code references|viewed in the browser/i);
+    await expect(
+      importShare(
+        local,
+        shareKey("https://sharing.test", capability()),
+        // SAFETY: the test disguises the snapshot on purpose.
+        { ...bundle, snapshot: { ...snapshot, ...extra } } as typeof bundle,
+      ),
+    ).rejects.toThrow(/code references|viewed in the browser/i);
   }
 });
 

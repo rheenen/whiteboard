@@ -1,7 +1,10 @@
 import { mkdir } from "node:fs/promises";
 
 import { type VcsArg, gitAt } from "@dev.fast/local-vcs";
-import { normalizeGitHubRemote } from "@dev.fast/review-share-protocol";
+import {
+  normalizeGitHubRemote,
+  normalizeGitRemote,
+} from "@dev.fast/review-share-protocol";
 import { type Pins, ReviewInputError } from "@dev.fast/whiteboard-document";
 
 /** A full commit id, SHA-1 or SHA-256. */
@@ -17,7 +20,13 @@ export function assertCommitIds(commits: readonly string[]) {
     );
 }
 
-/** Keep credential helpers but prevent the calling shell from redirecting Git's object store. */
+/** The transports a shared fetch may use. A shared board names its remote,
+ * so `file`, `ext` and the rest stay off; tests add `file`. */
+export const sharedProtocols = new Set(["https", "ssh"]);
+
+/** Keep credential helpers but prevent the calling shell from redirecting
+ * Git's object store. A fetch reaches only https and ssh remotes, and a
+ * credential helper never waits for a person. */
 export function sharedGit(cwd: string, args: VcsArg[]) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -34,15 +43,34 @@ export function sharedGit(cwd: string, args: VcsArg[]) {
 
   return gitAt(
     cwd,
-    ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
-    { env },
+    [
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "protocol.allow=never",
+      ...[...sharedProtocols].flatMap((protocol) => [
+        "-c",
+        `protocol.${protocol}.allow=always`,
+      ]),
+      ...args,
+    ],
+    { env: { ...env, GCM_INTERACTIVE: "never" } },
   );
 }
 
+const UNADVERTISED =
+  /not our ref|couldn't find remote ref|unadvertised object/i;
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- A catch boundary: git's error may be anything.
+const stderrOf = (error: unknown) =>
+  error instanceof Error && "stderr" in error ? String(error.stderr) : "";
+
 function fetchError(stderr: string): ReviewInputError {
-  if (/not our ref|couldn't find remote ref|unadvertised object/i.test(stderr))
+  if (UNADVERTISED.test(stderr))
     return new ReviewInputError(
-      "The shared commits are no longer available on GitHub. Ask the sender to restore them, then retry.",
+      "The shared commits are no longer available on the repository's remote. Ask the sender to push or restore them, then retry.",
       409,
     );
 
@@ -52,12 +80,12 @@ function fetchError(stderr: string): ReviewInputError {
     )
   )
     return new ReviewInputError(
-      "Git couldn't access this GitHub repository. Your Whiteboard sign-in doesn't grant repository access, so set up Git credentials for it, then retry.",
+      "Git couldn't access this repository. Your Whiteboard sign-in doesn't grant repository access, so set up Git credentials for it, then retry.",
       409,
     );
 
   return new ReviewInputError(
-    "Could not fetch the GitHub repository. Check your connection and Git credentials for this repository, then retry.",
+    "Could not fetch the repository. Check your connection and Git credentials for this repository, then retry.",
     409,
   );
 }
@@ -106,9 +134,7 @@ export async function fetchPinnedRepository(
       })),
     ]);
   } catch (error) {
-    throw fetchError(
-      error instanceof Error && "stderr" in error ? String(error.stderr) : "",
-    );
+    throw fetchError(stderrOf(error));
   }
 
   for (const { commit } of named)
@@ -148,11 +174,27 @@ export async function fetchSharedCommits(
         refspec: { from: commit, to: ref(commit), force: true },
       })),
     ]);
+
+    return;
   } catch (error) {
-    throw fetchError(
-      error instanceof Error && "stderr" in error ? String(error.stderr) : "",
-    );
+    // A server that serves only advertised commits (Azure DevOps, Bitbucket)
+    // still has them on a branch.
+    if (!UNADVERTISED.test(stderrOf(error))) throw fetchError(stderrOf(error));
   }
+
+  try {
+    await sharedGit(root, ["fetch", "--no-tags", "origin"]);
+  } catch (error) {
+    throw fetchError(stderrOf(error));
+  }
+
+  for (const commit of missing)
+    try {
+      await sharedGit(root, ["cat-file", "-e", { rev: `${commit}^{commit}` }]);
+      await sharedGit(root, ["update-ref", { ref: ref(commit) }, { commit }]);
+    } catch {
+      throw fetchError("not our ref");
+    }
 }
 
 /** Drops the refs `fetchSharedCommits` kept for a share, once the share is
@@ -184,9 +226,7 @@ export async function cloneSharedRepository(root: string, url: string) {
   try {
     await sharedGit(root, ["fetch", "--no-tags", "origin", "HEAD"]);
   } catch (error) {
-    throw fetchError(
-      error instanceof Error && "stderr" in error ? String(error.stderr) : "",
-    );
+    throw fetchError(stderrOf(error));
   }
 
   await sharedGit(root, ["checkout", "--detach", "FETCH_HEAD"]);
@@ -218,16 +258,32 @@ export async function repositoryReady(
   }
 }
 
-export async function readShareRepository(root: string) {
-  let cloneUrl: string;
+/** Where a reader fetches the board's commits: `repository` for GitHub, as
+ * every reader understands it, `remote` for any other host. */
+export async function readShareRepository(
+  root: string,
+): Promise<{ repository: { cloneUrl: string } } | { remote: { url: string } }> {
+  let origin: string;
 
   try {
-    cloneUrl = normalizeGitHubRemote(
-      (await sharedGit(root, ["remote", "get-url", "origin"])).stdout,
-    );
+    origin = (
+      await sharedGit(root, ["remote", "get-url", "origin"])
+    ).stdout.trim();
   } catch {
-    throw new ReviewInputError("Sharing requires a GitHub origin remote.");
+    throw new ReviewInputError("Sharing requires an origin remote.");
   }
 
-  return { cloneUrl };
+  try {
+    return { repository: { cloneUrl: normalizeGitHubRemote(origin) } };
+  } catch {
+    // Not GitHub.
+  }
+
+  try {
+    return { remote: { url: normalizeGitRemote(origin) } };
+  } catch {
+    throw new ReviewInputError(
+      "Sharing requires an https or ssh origin remote.",
+    );
+  }
 }

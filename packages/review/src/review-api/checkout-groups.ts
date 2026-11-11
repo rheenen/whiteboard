@@ -131,6 +131,31 @@ function groupOf(commonDir: string, origin: string | null): RepositoryGroup {
   );
 }
 
+/** A checkout's origin URL as git resolves it; undefined for a folder that
+ * isn't a readable checkout or has no origin. */
+export function repositoryOriginAt(root: string): string | undefined {
+  if (!existsSync(root)) return undefined;
+
+  const commonDir = commonDirOf(root);
+  const origin = commonDir ? originUrlOf(commonDir) : undefined;
+
+  if (commonDir && origin !== undefined) return origin ?? undefined;
+
+  const resolved = gitCommonDirSync(root);
+
+  if (!resolved) return undefined;
+
+  return (
+    quietly("git", [
+      "--git-dir",
+      resolved,
+      "remote",
+      "get-url",
+      "origin",
+    ])?.trim() || undefined
+  );
+}
+
 /** A checkout's repository group; undefined if it isn't a readable git
  * checkout. Reads `.git` and its config directly where it can, so many
  * checkouts group in a moment; git answers the rest. */

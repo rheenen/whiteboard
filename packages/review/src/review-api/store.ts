@@ -12,6 +12,7 @@ import {
   boardIconKind,
   boardTitle,
 } from "@dev.fast/review-protocol";
+import { repositoryIdentity } from "@dev.fast/review-share-protocol";
 import {
   type ActivitySurface,
   type Applied,
@@ -73,7 +74,11 @@ import {
   dependencyCycle,
   orderSiblings,
 } from "./board-order.js";
-import { CheckoutGroups, remoteGroup } from "./checkout-groups.js";
+import {
+  CheckoutGroups,
+  remoteGroup,
+  repositoryOriginAt,
+} from "./checkout-groups.js";
 import { type BoardLinkPreview, boardLinkPreview } from "./link-preview.js";
 import {
   pullRequestKey,
@@ -1138,6 +1143,42 @@ export class ReviewStore {
 
     if (!key) return [];
 
+    return this.byLastUse(
+      this.repositories()
+        .filter((repository) => {
+          try {
+            return this.repositoryGroup(repository.path)?.key === key;
+          } catch {
+            return false;
+          }
+        })
+        .map((repository) => repository.id),
+    );
+  }
+
+  /** Checkouts whose origin names the same repository as `url`, most
+   * recently used first. Unlike `checkoutsOf`, a port or the path's case
+   * tells two repositories on one host apart, so a shared board's commits
+   * are fetched only from the repository it names. */
+  checkoutsOfRemote(url: string): string[] {
+    const identity = repositoryIdentity(url);
+
+    if (!identity) return [];
+
+    return this.byLastUse(
+      this.repositories()
+        .filter((repository) => {
+          const origin = repositoryOriginAt(repository.path);
+
+          return (
+            origin !== undefined && repositoryIdentity(origin) === identity
+          );
+        })
+        .map((repository) => repository.id),
+    );
+  }
+
+  private byLastUse(repositoryIds: string[]): string[] {
     const used = (repositoryId: string) =>
       String(
         this.db
@@ -1149,15 +1190,8 @@ export class ReviewStore {
           .get(repositoryId)?.at ?? "",
       );
 
-    return this.repositories()
-      .filter((repository) => {
-        try {
-          return this.repositoryGroup(repository.path)?.key === key;
-        } catch {
-          return false;
-        }
-      })
-      .map((repository) => ({ id: repository.id, at: used(repository.id) }))
+    return repositoryIds
+      .map((id) => ({ id, at: used(id) }))
       .sort((left, right) => right.at.localeCompare(left.at))
       .map((repository) => repository.id);
   }

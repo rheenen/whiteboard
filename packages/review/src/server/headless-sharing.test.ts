@@ -27,9 +27,9 @@ it("commits and uploads through a real headless server and CLI without Desktop, 
   const stateDir = path.join(root, "server");
   const pins = fixture.store.read(fixture.reviewId).pins;
 
-  vi.spyOn(repository, "readShareRepository").mockResolvedValue(
-    fixture.repository,
-  );
+  vi.spyOn(repository, "readShareRepository").mockResolvedValue({
+    repository: fixture.repository,
+  });
 
   vi.stubEnv("DEV_REVIEW_SHARE_TOKEN", "ci-publish-token");
   vi.stubEnv("DEV_REVIEW_SHARE_ORIGIN", "https://sharing.test");

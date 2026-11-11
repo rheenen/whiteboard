@@ -19,7 +19,10 @@ import {
   sharePresentationSchema,
   sharedSnapshotSchema,
 } from "./import.js";
-import { fetchPinnedRepository } from "./repository.js";
+import { fetchPinnedRepository, sharedProtocols } from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const cleanup: Array<() => Promise<void>> = [];
 

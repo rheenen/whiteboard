@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,7 +18,15 @@ import {
   whiteboardFileText,
 } from "./file.js";
 import { mountSharingHost, mountSharingPublisher } from "./host.js";
-import { fetchPinnedRepository } from "./repository.js";
+import {
+  type cloneSharedRepository,
+  fetchPinnedRepository,
+  readShareRepository,
+  sharedProtocols,
+} from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -112,7 +121,7 @@ it("serves a board as a named .whiteboard file", async () => {
     ),
   );
   mountSharingPublisher(api, sender.store, sender.data, {
-    readRepository: async () => sender.repository,
+    readRepository: async () => ({ repository: sender.repository }),
   });
 
   const response = await api.request("/sharing/export", {
@@ -129,7 +138,7 @@ it("serves a board as a named .whiteboard file", async () => {
   expect(bundle.repository).toEqual(sender.repository);
 });
 
-it("refuses to export pinned code without a GitHub remote to fetch it from", async () => {
+it("refuses to export pinned code without a remote to fetch it from", async () => {
   const sender = await fixture();
   const api = new Hono();
   api.onError((error, context) =>
@@ -140,7 +149,7 @@ it("refuses to export pinned code without a GitHub remote to fetch it from", asy
   );
   mountSharingPublisher(api, sender.store, sender.data, {
     readRepository: async () => {
-      throw new Error("Sharing requires a GitHub repository remote.");
+      throw new Error("Sharing requires an origin remote.");
     },
   });
 
@@ -153,7 +162,7 @@ it("refuses to export pinned code without a GitHub remote to fetch it from", asy
   expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
     error:
-      "Exporting pinned code needs a GitHub remote the file's reader can fetch from.",
+      "Exporting pinned code needs an https or ssh origin remote the file's reader can fetch from.",
   });
 });
 
@@ -175,9 +184,19 @@ async function recipientApi() {
       error instanceof ReviewInputError ? error.status : 500,
     ),
   );
-  mountSharingHost(api, recipient.store, recipient.data, {
-    fetchRepository: (target, _url, ...rest) =>
+
+  const fetchRepository = vi.fn<typeof fetchPinnedRepository>(
+    (target, _url, ...rest) =>
       fetchPinnedRepository(target, sender.repo, ...rest),
+  );
+
+  const cloneRepository = vi.fn<typeof cloneSharedRepository>(async () => {
+    throw new Error("A file never clones.");
+  });
+
+  mountSharingHost(api, recipient.store, recipient.data, {
+    fetchRepository,
+    cloneRepository,
   });
 
   const text = whiteboardFileText(
@@ -187,6 +206,19 @@ async function recipientApi() {
       repository: sender.repository,
     }),
   );
+
+  /** The recipient's own clone of the sender's repository. */
+  const checkout = async (name: string, origin?: string) => {
+    const root = path.join(sender.root, name);
+
+    execFileSync("git", ["clone", "-q", sender.repo, root]);
+
+    if (origin)
+      execFileSync("git", ["-C", root, "remote", "set-url", "origin", origin]);
+    else execFileSync("git", ["-C", root, "remote", "remove", "origin"]);
+
+    return (await recipient.data.register(root)).id;
+  };
 
   const file = path.join(sender.root, "board.whiteboard");
   await writeFile(file, text);
@@ -211,15 +243,25 @@ async function recipientApi() {
     }
   };
 
-  return { sender, recipient, file, open };
+  return {
+    sender,
+    recipient,
+    file,
+    open,
+    checkout,
+    fetchRepository,
+    cloneRepository,
+  };
 }
 
 it("imports a .whiteboard file once per content", async () => {
-  const { sender, recipient, file, open } = await recipientApi();
+  const { sender, recipient, file, open, checkout } = await recipientApi();
+  const own = await checkout("own", "git@github.com:fixture/review.git");
 
   const first = await open({ path: file });
 
   expect(first.stage).toBe("ready");
+  expect(recipient.store.read(first.reviewId).pins?.repositoryId).toBe(own);
   expect(first.title).toBe("Sharing pinned commits");
   expect(recipient.store.read(first.reviewId).shared?.cloneUrl).toBe(
     sender.repository.cloneUrl,
@@ -229,6 +271,69 @@ it("imports a .whiteboard file once per content", async () => {
     stage: "ready",
     reviewId: first.reviewId,
   });
+});
+
+it("never clones for a file: it asks for a checkout of the repository", async () => {
+  const { file, open, fetchRepository, cloneRepository } = await recipientApi();
+
+  expect(await open({ path: file })).toMatchObject({
+    stage: "error",
+    error:
+      "Open a checkout of fixture / review in Whiteboard first, then open this file again.",
+  });
+  expect(fetchRepository).not.toHaveBeenCalled();
+  expect(cloneRepository).not.toHaveBeenCalled();
+});
+
+it("opens a file on a checkout that holds every pinned commit", async () => {
+  const { recipient, file, open, checkout } = await recipientApi();
+  const local = await checkout("no-origin");
+
+  const opened = await open({ path: file });
+
+  expect(opened.stage).toBe("ready");
+  expect(recipient.store.read(opened.reviewId).pins?.repositoryId).toBe(local);
+});
+
+it("exports and opens a board of an Azure DevOps repository", async () => {
+  const { sender, recipient, open, checkout } = await recipientApi();
+
+  execFileSync("git", [
+    "-C",
+    sender.repo,
+    "remote",
+    "add",
+    "origin",
+    "git@ssh.dev.azure.com:v3/org/Payments%20Hub/iac",
+  ]);
+
+  const exported = await exportShare({
+    ...sender,
+    reviewId: sender.reviewId,
+    repository: undefined,
+    ...(await readShareRepository(sender.repo)),
+  });
+
+  expect(exported.repository).toBeUndefined();
+  expect(exported.remote).toEqual({
+    url: "https://dev.azure.com/org/Payments%20Hub/_git/iac",
+  });
+
+  const file = path.join(sender.root, "azure.whiteboard");
+  await writeFile(file, whiteboardFileText(exported));
+
+  // Another project's checkout with the same commits is not preferred.
+  await checkout("other", "https://dev.azure.com/org/Other/_git/iac");
+
+  const own = await checkout(
+    "azure",
+    "https://Org@dev.azure.com/Org/Payments%20Hub/_git/iac",
+  );
+
+  const opened = await open({ path: file });
+
+  expect(opened.stage).toBe("ready");
+  expect(recipient.store.read(opened.reviewId).pins?.repositoryId).toBe(own);
 });
 
 it("reports a file that is not a whiteboard", async () => {

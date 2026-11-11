@@ -39,7 +39,7 @@ it.each(["dev-fast-review", "dev-fast-review-preview"])(
         ),
       );
       mountSharingHost(api, fixture.store, fixture.data, {
-        readRepository: async () => fixture.repository,
+        readRepository: async () => ({ repository: fixture.repository }),
         onPublished: (event) => published.push(event),
         fetch: async (input, init) => {
           const url = new URL(String(input));
@@ -131,7 +131,7 @@ it.each([
         ),
       );
       mountSharingHost(api, fixture.store, fixture.data, {
-        readRepository: async () => fixture.repository,
+        readRepository: async () => ({ repository: fixture.repository }),
         fetch: async (input) =>
           String(input).endsWith("/api/auth/token")
             ? new Response(null, { status: 404 })
@@ -176,7 +176,7 @@ it("signs the user out when the share service rejects the stored token", async (
       ),
     );
     mountSharingHost(api, fixture.store, fixture.data, {
-      readRepository: async () => fixture.repository,
+      readRepository: async () => ({ repository: fixture.repository }),
       fetch: async () => new Response("unauthorized", { status: 401 }),
     });
 

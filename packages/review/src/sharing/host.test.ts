@@ -19,7 +19,10 @@ import { ShareClient, ShareRequestError } from "./client.js";
 import { exportShare } from "./export.js";
 import { mountSharingHost } from "./host.js";
 import { shareKey } from "./import.js";
-import { fetchPinnedRepository } from "./repository.js";
+import { fetchPinnedRepository, sharedProtocols } from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -12,7 +12,11 @@ import {
   forgetSharedCommits,
   repositoryReady,
   sharedGit,
+  sharedProtocols,
 } from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const directories: string[] = [];
 

@@ -43,10 +43,14 @@ Sharing is explicit. `whiteboard share` uploads an immutable copy of one saved
 whiteboard version to the /dev/fast share service and returns a link. The copy
 includes the document text, software maps, complete trace
 conversations, the source lines the whiteboard references, the commits it is
-pinned to, your GitHub login, and the repository's GitHub clone URL. Anyone
-with the link can read the copy in a browser. Opening it in Whiteboard Desktop
-makes a copy you can edit and fetches the pinned commits from GitHub with the
-recipient's own access.
+pinned to, your GitHub login, and the repository's remote URL without
+credentials. Anyone with the link can read the copy in a browser. Opening it in
+Whiteboard Desktop makes a copy you can edit and fetches the pinned commits
+from the repository's remote with the recipient's own access.
+
+`whiteboard export` writes the same copy to a `.whiteboard` file and uploads
+nothing. Whiteboard Desktop opens such a file on a checkout of its repository
+that you already have, and never clones one for it.
 `whiteboard share revoke <share-id>` stops future downloads.
 
 ## Hosted trace store

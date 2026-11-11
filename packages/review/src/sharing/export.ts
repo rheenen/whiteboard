@@ -136,6 +136,7 @@ export async function exportShare(input: {
   reviewId: string;
   version?: number;
   repository?: ShareBundle["repository"];
+  remote?: ShareBundle["remote"];
 }): Promise<ShareBundle> {
   const stored = structuredClone(
     input.store.read(input.reviewId, input.version),
@@ -322,6 +323,7 @@ export async function exportShare(input: {
     selections,
     sources,
     ...(input.repository && { repository: input.repository }),
+    ...(input.remote && { remote: input.remote }),
   };
 
   if (frozen) bundle.frozen = true;

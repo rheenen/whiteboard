@@ -4,7 +4,10 @@ import {
   ReviewCommitSummarySchema,
   type ReviewTheme,
 } from "@dev.fast/review-protocol";
-import { shareBundleSchema } from "@dev.fast/review-share-protocol";
+import {
+  repositoryLabel,
+  shareBundleSchema,
+} from "@dev.fast/review-share-protocol";
 import { traceSchema } from "@review/review-api/trace-schema";
 import { z } from "zod";
 
@@ -30,7 +33,7 @@ export async function openShare(
   const bundle = shareBundleSchema.parse(share);
   const snapshot = boardSnapshotSchema.parse(bundle.snapshot);
   const { pins } = snapshot;
-  const cloneUrl = bundle.repository?.cloneUrl;
+  const cloneUrl = bundle.repository?.cloneUrl ?? bundle.remote?.url;
 
   const data = boardView(
     {
@@ -72,10 +75,3 @@ export async function openShare(
     },
   };
 }
-
-/** "owner / repo", as Desktop names a board's repository. */
-const repositoryLabel = (cloneUrl: string) =>
-  new URL(cloneUrl).pathname
-    .slice(1)
-    .replace(/\.git$/, "")
-    .replaceAll("/", " / ");

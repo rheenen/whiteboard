@@ -16,6 +16,7 @@ import {
   readReviewPackageVersion,
 } from "@review/package-paths.js";
 import { openReviewProfile } from "@review/review-api/profile.js";
+import { sharedProtocols } from "@review/sharing/repository.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { createGlobalReviewServer } from "./desktop-server.js";
@@ -29,6 +30,9 @@ import {
   stopAll,
   summary,
 } from "./review-gateway-test-utils.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const version = readReviewPackageVersion(import.meta.url);
 

@@ -214,12 +214,16 @@ export function mountSharingHost(
     });
   });
 
-  const shareInput = (onStage: ShareImport["onStage"]): ShareImport => ({
+  const shareInput = (
+    onStage: ShareImport["onStage"],
+    fromFile = false,
+  ): ShareImport => ({
     store,
     data,
     fetchRepository: options.fetchRepository,
     cloneRepository: options.cloneRepository,
     onStage,
+    fromFile,
   });
 
   const startImport = (
@@ -285,7 +289,7 @@ export function mountSharingHost(
               async () =>
                 copy() ??
                 importShare(
-                  shareInput(onStage),
+                  shareInput(onStage, true),
                   key,
                   parseWhiteboardFile(text),
                 ),
@@ -440,7 +444,7 @@ export function mountSharingPublisher(
 
     const verified = await repository;
 
-    if (verified) bundle.repository = verified;
+    if (verified) Object.assign(bundle, verified);
 
     return {
       title: snapshot.title,
@@ -473,9 +477,9 @@ export function mountSharingPublisher(
       throw new ReviewInputError(
         "Commit your changes to export this whiteboard as a file.",
       );
-    else if (!bundle.repository && needsRepository)
+    else if (!bundle.repository && !bundle.remote && needsRepository)
       throw new ReviewInputError(
-        "Exporting pinned code needs a GitHub remote the file's reader can fetch from.",
+        "Exporting pinned code needs an https or ssh origin remote the file's reader can fetch from.",
       );
 
     return context.json({

@@ -130,9 +130,4 @@ it("checks every quote against its trace and opens only shares that name their r
   expect(() =>
     validateShareBundle({ ...bundle, traces: { [traceId!]: trace } }),
   ).toThrow("Duplicate shared trace event");
-
-  const { repository: _repository, ...browserOnly } = bundle;
-  expect(() => validateShareBundle(browserOnly)).toThrow(
-    "This share can only be viewed in the browser.",
-  );
 });
