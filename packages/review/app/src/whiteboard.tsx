@@ -36,6 +36,7 @@ import {
 } from "./ask-open-state";
 import { AuthoringActivityContext } from "./authoring-activity-context";
 import { type CursorFold, foldCursors } from "./authoring-cursor";
+import { BoardCommentsProvider } from "./board-comments";
 import { BoardCommitsContext } from "./board-commits";
 import { BoardEditorHostContext } from "./board-editor/host";
 import { CanvasQueryProvider, useCanvasQueryScope } from "./canvas-query";
@@ -223,11 +224,13 @@ export function WhiteboardProvider({
                                         >
                                           <AskHistoryProvider>
                                             <AskDesktopSync />
-                                            <AgentSelectionProvider
-                                              revision={snapshot.reviewId}
-                                            >
-                                              {children}
-                                            </AgentSelectionProvider>
+                                            <BoardCommentsProvider>
+                                              <AgentSelectionProvider
+                                                revision={snapshot.reviewId}
+                                              >
+                                                {children}
+                                              </AgentSelectionProvider>
+                                            </BoardCommentsProvider>
                                           </AskHistoryProvider>
                                         </BoardReview>
                                       </ReviewDebugSettingsProvider>

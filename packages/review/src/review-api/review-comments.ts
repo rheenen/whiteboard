@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import { ReviewInputError } from "@dev.fast/whiteboard-document";
+import { commentPartSchema } from "@review/comment-part.js";
 import { z } from "zod";
 
 /** Where a comment points in the source: a line range of one side of the
@@ -20,6 +21,8 @@ export const commentSourceAnchorSchema = z.strictObject({
   toLine: z.number().int().positive(),
   /** The full commit id of the side. */
   commit: z.string().optional(),
+  /** The diagram part whose code this is, when the comment was made on it. */
+  part: commentPartSchema.optional(),
 });
 
 /** Where a comment points in the whiteboard's text: a block, a quote in it,
@@ -28,6 +31,8 @@ export const commentDocumentAnchorSchema = z.strictObject({
   kind: z.literal("document"),
   blockId: z.string().optional(),
   quote: z.string().optional(),
+  /** The diagram part, when the comment was made on one without code. */
+  part: commentPartSchema.optional(),
 });
 
 export const commentAnchorSchema = z.discriminatedUnion("kind", [

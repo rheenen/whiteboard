@@ -1,6 +1,7 @@
 import os from "node:os";
 
 import type { AgentSelection } from "@review/agent-selection.js";
+import type { CommentPart } from "@review/comment-part.js";
 import {
   COMMIT_ID,
   readShareRepository,
@@ -12,8 +13,21 @@ import type { CommentAnchor } from "./review-comments.js";
 import type { ReviewStore, Snapshot } from "./store.js";
 
 /** Where a selection points, resolved once, when the comment is made: a PR
- * tool reads it later without the checkout, the store or this server. */
+ * tool reads it later without the checkout, the store or this server. A
+ * comment on a diagram part also names the part. */
 export async function commentAnchor(
+  store: ReviewStore,
+  data: LocalReviewData | undefined,
+  snapshot: Snapshot,
+  selection: AgentSelection,
+  part?: CommentPart,
+): Promise<CommentAnchor> {
+  const anchor = await selectionAnchor(store, data, snapshot, selection);
+
+  return part ? { ...anchor, part } : anchor;
+}
+
+async function selectionAnchor(
   store: ReviewStore,
   data: LocalReviewData | undefined,
   snapshot: Snapshot,

@@ -239,10 +239,19 @@ export function ThreadsSectionBody(
 function commentPlace(comment: ReviewSidebarComment): string {
   const { anchor } = comment;
 
-  if (anchor.kind === "source")
-    return `${anchor.file}:${anchor.fromLine === anchor.toLine ? anchor.fromLine : `${anchor.fromLine}–${anchor.toLine}`}${anchor.side === "base" ? " (base)" : ""}`;
+  const lines =
+    anchor.kind === "source"
+      ? `${anchor.file}:${anchor.fromLine === anchor.toLine ? anchor.fromLine : `${anchor.fromLine}–${anchor.toLine}`}${anchor.side === "base" ? " (base)" : ""}`
+      : undefined;
 
-  return anchor.quote ? `“${anchor.quote}”` : "This whiteboard";
+  if (anchor.part)
+    return lines ? `${anchor.part.label} · ${lines}` : anchor.part.label;
+
+  if (lines) return lines;
+
+  return anchor.kind === "document" && anchor.quote
+    ? `“${anchor.quote}”`
+    : "This whiteboard";
 }
 
 /** The board's own comments, above its threads: open ones first. A row

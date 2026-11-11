@@ -12,6 +12,11 @@ import { createPortal } from "react-dom";
 
 import { useAskHistory } from "./ask-history";
 import { openAskConversations, truncate } from "./ask-marks";
+import {
+  type BoardComment,
+  CommentPin,
+  useBoardComments,
+} from "./board-comments";
 import { useOptionalReviewPanelStore } from "./review-panel";
 import { fontSize, leading, radius, space } from "./scale.stylex";
 import { tokens } from "./tokens.stylex";
@@ -85,8 +90,45 @@ function codeMarks(
   return [...marks.values()];
 }
 
-/** Pins saved Ask conversations in the gutter of a diff or code peek,
- * beside the lines they asked about; a pin reopens them. */
+interface NoteMark extends ReviewAskMark {
+  /** The open comments on these lines, oldest first. */
+  comments: BoardComment[];
+}
+
+/** The open comments on code, one mark per range. They are on the review's
+ * own comparison, so a diff of one commit shows none. */
+function commentMarks(
+  comments: readonly BoardComment[],
+  commit: string | undefined,
+): NoteMark[] {
+  if (commit) return [];
+  const marks = new Map<string, NoteMark>();
+
+  for (const comment of comments) {
+    const { anchor } = comment;
+
+    if (comment.resolved || anchor.kind !== "source") continue;
+    const id = `comment:${anchor.file}:${anchor.side}:${anchor.fromLine}:${anchor.toLine}`;
+    const mark = marks.get(id);
+
+    if (mark) mark.comments.push(comment);
+    else
+      marks.set(id, {
+        id,
+        file: anchor.file,
+        side: anchor.side,
+        fromLine: anchor.fromLine,
+        toLine: anchor.toLine,
+        comments: [comment],
+      });
+  }
+
+  return [...marks.values()];
+}
+
+/** Pins saved Ask conversations and open comments in the gutter of a diff
+ * or code peek, beside the lines they are about; an Ask pin reopens its
+ * conversations, a comment pin shows its comments. */
 export function AskCodePins({
   handle,
   commit,
@@ -98,9 +140,16 @@ export function AskCodePins({
   const entries = history?.entries;
   const board = history?.board ?? null;
 
+  const comments = useBoardComments()?.comments;
+
+  const notes = useMemo(
+    () => commentMarks(comments ?? [], commit),
+    [comments, commit],
+  );
+
   const marks = useMemo(
-    () => codeMarks(entries ?? [], board, commit),
-    [entries, board, commit],
+    () => [...codeMarks(entries ?? [], board, commit), ...notes],
+    [entries, board, commit, notes],
   );
 
   const [nodes, setNodes] = useState<ReadonlyMap<HTMLElement, string>>(
@@ -123,7 +172,10 @@ export function AskCodePins({
   }, [handle, marks]);
 
   const byId = useMemo(
-    () => new Map(marks.map((mark) => [mark.id, mark])),
+    () =>
+      new Map<string, CodeMark | NoteMark>(
+        marks.map((mark) => [mark.id, mark]),
+      ),
     [marks],
   );
 
@@ -132,7 +184,23 @@ export function AskCodePins({
       {[...nodes].map(([node, id]) => {
         const mark = byId.get(id);
 
-        return mark ? createPortal(<CodePin mark={mark} />, node, id) : null;
+        if (!mark) return null;
+
+        return createPortal(
+          "comments" in mark ? (
+            <span {...stylex.props(styles.note)}>
+              <CommentPin
+                comments={mark.comments}
+                label={`${mark.file} line ${mark.fromLine}`}
+                xstyle={styles.notePin}
+              />
+            </span>
+          ) : (
+            <CodePin mark={mark} />
+          ),
+          node,
+          id,
+        );
       })}
     </>
   );
@@ -181,6 +249,19 @@ function CodePin({ mark }: { mark: CodeMark }): ReactElement {
 }
 
 const styles = stylex.create({
+  // Fills the gutter node, as an Ask pin does.
+  note: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // A gutter line is shorter than the icon's own size.
+  notePin: {
+    minWidth: "calc(100% - 2px)",
+    height: "calc(100% - 2px)",
+  },
   // Spans both gutter lanes.
   pin: {
     position: "absolute",

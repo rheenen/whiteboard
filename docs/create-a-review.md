@@ -26,9 +26,14 @@ or code link to open its source.
 ## Comment on the review
 
 Select a passage of the whiteboard or lines of code, then choose **Add
-comment**. The **Threads** tab lists the board's comments above its Ask
-threads. Select a comment to show what it points at, or resolve or delete it
-beside.
+comment**. To comment on a part of a diagram, expand the diagram and select
+the pencil beside a step: the comment is on the code behind that part, or on
+the diagram when the part has no code.
+
+A comment icon marks each open comment: after its passage, at the corner of
+its block or diagram part, and in the gutter beside its code. Select the icon
+to read the comments there, and to edit, resolve or delete one. The
+**Threads** tab lists every comment above the Ask threads, resolved ones too.
 
 A tool that posts pull request comments can read them without a running
 server:
@@ -42,8 +47,9 @@ comment has a Markdown `body`, its `author`, `resolved`, a `hash` that changes
 when the body or anchor changes, and an `anchor`. A source anchor names the
 repository remote, the `file`, the `side` (`head` or `base`), 1-based
 `fromLine` and `toLine`, and the full `commit`; a document anchor names a
-`blockId` and a `quote`. The `session_comments_list` MCP tool returns the same
-comments.
+`blockId` and a `quote`. A comment on a diagram part also has a `part` with
+the diagram's `blockId`, the step's `id` and its `label`. The
+`session_comments_list` MCP tool returns the same comments.
 
 ## Plan and review a stack
 

@@ -56,6 +56,7 @@ import {
 import type { AskThreadHooks } from "@review/ask/thread.js";
 import type { AskThreads } from "@review/ask/threads.js";
 import { watchAskThreads } from "@review/ask/watch.js";
+import { commentPartSchema } from "@review/comment-part.js";
 import { fuzzyRank } from "@review/fuzzy-match.js";
 import { resolveReviewStackLayers } from "@review/review-stack.js";
 import { readBoundedRequestJson } from "@review/server/hono-http.js";
@@ -1250,6 +1251,8 @@ export function createReviewApi(
     selection: AgentSelectionSchema,
     body: z.string().trim().min(1).max(COMMENT_BODY_LIMIT),
     parentId: z.string().max(200).optional(),
+    /** The diagram part the selection is the code of. */
+    part: commentPartSchema.optional(),
   });
 
   const commentChangeSchema = z
@@ -1309,7 +1312,13 @@ export function createReviewApi(
       reviewId,
       body: input.body,
       author: await commentAuthor(store, snapshot),
-      anchor: await commentAnchor(store, data, snapshot, input.selection),
+      anchor: await commentAnchor(
+        store,
+        data,
+        snapshot,
+        input.selection,
+        input.part,
+      ),
       title: input.selection.title,
       selection: input.selection,
       version: snapshot.version,

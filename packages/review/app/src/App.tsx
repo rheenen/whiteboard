@@ -42,6 +42,7 @@ import { type ReviewNodeTint, useReviewDebugSettings } from "./debug-settings";
 import { type DiffFilePicker, useDiffFilePicker } from "./diff-file-picker";
 import { DocumentContentsContext } from "./diff-sidebar-folds";
 import { ReviewDiffView } from "./DiffView";
+import { DocumentCommentPins } from "./document-comment-pins";
 import { useDocumentEmbedScroll } from "./document-embed-scroll";
 import { documentStyles } from "./document-styles";
 import { useReviewSession } from "./host/review-session";
@@ -665,6 +666,10 @@ function ReviewLayoutContent({
                 </ReviewDocumentBoundary>
               </article>
               <AskThreadMarks
+                articleRef={articleRef}
+                revision={documentRevision}
+              />
+              <DocumentCommentPins
                 articleRef={articleRef}
                 revision={documentRevision}
               />

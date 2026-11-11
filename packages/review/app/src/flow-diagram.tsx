@@ -10,6 +10,7 @@ import * as stylex from "@stylexjs/stylex";
 import { useMemo } from "react";
 import { createPortal } from "react-dom";
 
+import { DiagramCommentScope } from "./board-comments";
 import { DiagramHeader } from "./diagram-header";
 import { diagramStyles } from "./diagram-styles";
 import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour";
@@ -181,7 +182,7 @@ export function FlowDiagram({
   );
 
   return (
-    <>
+    <DiagramCommentScope.Provider value={node.id}>
       {figure(false)}
       {selection && portalTarget
         ? createPortal(
@@ -198,7 +199,7 @@ export function FlowDiagram({
             portalTarget,
           )
         : null}
-    </>
+    </DiagramCommentScope.Provider>
   );
 }
 

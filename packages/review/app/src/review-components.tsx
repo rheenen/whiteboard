@@ -10,6 +10,7 @@ import {
   ExternalLinkIcon,
   MapPinIcon,
   MinusIcon,
+  PencilIcon,
   PopOutIcon,
 } from "@canvas/ui/icons";
 import {
@@ -40,6 +41,7 @@ import {
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 
+import { useAgentSelection } from "./agent-selection";
 import { AskCloseWarning } from "./ask-close";
 import { AskDeleteThreadButton } from "./ask-delete";
 import {
@@ -63,6 +65,7 @@ import {
 import { useMarkThreadViewed } from "./ask-viewed";
 import { AskSlot, AskWindow } from "./ask-window";
 import { AuthoredCodeSurface } from "./authored-code-surface";
+import { CommentPin, partSelection, usePartComments } from "./board-comments";
 import { SourceCodePeek } from "./CodePeek";
 import { documentStyles } from "./document-styles";
 import { drawStyles } from "./draw-styles";
@@ -1303,6 +1306,7 @@ export function GuidedTourPanel({
                   </div>
                 </div>
                 <GuidedTourStopMain
+                  tourId={tour.id}
                   stop={stop}
                   index={index}
                   total={tour.stops.length}
@@ -1340,6 +1344,7 @@ export function GuidedTourPanel({
 }
 
 function GuidedTourStopMain({
+  tourId,
   stop,
   index,
   total,
@@ -1347,6 +1352,8 @@ function GuidedTourStopMain({
   onNativeFocus,
   onClose,
 }: {
+  /** The block whose tour this is: a comment on the step names it. */
+  tourId: string;
   stop: GuidedTourStop;
   index: number;
   total: number;
@@ -1372,6 +1379,7 @@ function GuidedTourStopMain({
             >
               {stop.label}
             </h3>
+            <StepComments tourId={tourId} stop={stop} />
           </div>
           {stop.detail && (
             <p {...stylex.props(tourStyles.detail)}>{stop.detail}</p>
@@ -1402,6 +1410,45 @@ function GuidedTourStopMain({
         />
       </div>
     </div>
+  );
+}
+
+/** A step's comments: its comment icon, and a button that comments on the
+ * step, on the code behind it when it has code. */
+function StepComments({
+  tourId,
+  stop,
+}: {
+  tourId: string;
+  stop: GuidedTourStop;
+}): ReactElement | null {
+  const selectForAgent = useAgentSelection();
+  const panels = useOptionalReviewPanelStore();
+  const matches = useCallback((id: string) => id === stop.anchor.id, [stop]);
+  const comments = usePartComments(tourId, matches);
+
+  return (
+    <>
+      <CommentPin comments={comments} label={stop.label} />
+      {panels ? (
+        <IconButton
+          size="small"
+          aria-label={`Comment on ${stop.label}`}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+
+            selectForAgent({
+              ...partSelection(tourId, stop),
+              compose: true,
+              anchorElement: event.currentTarget,
+              anchor: { x: rect.left, y: rect.top },
+            });
+          }}
+        >
+          <PencilIcon xstyle={iconStyles.inert} />
+        </IconButton>
+      ) : null}
+    </>
   );
 }
 

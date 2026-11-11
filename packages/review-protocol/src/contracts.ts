@@ -575,7 +575,8 @@ export interface ReviewSidebarComment {
   updatedAt: string;
   resolved: boolean;
   parentId?: string;
-  /** Where it points: a file's lines, or a block of the whiteboard. */
+  /** Where it points: a file's lines, or a block of the whiteboard. A
+   * comment on a diagram part also names the part. */
   anchor:
     | {
         kind: "source";
@@ -583,8 +584,21 @@ export interface ReviewSidebarComment {
         side: "head" | "base";
         fromLine: number;
         toLine: number;
+        part?: ReviewCommentPart;
       }
-    | { kind: "document"; blockId?: string; quote?: string };
+    | {
+        kind: "document";
+        blockId?: string;
+        quote?: string;
+        part?: ReviewCommentPart;
+      };
+}
+
+/** A diagram part: a step of the diagram's tour. */
+export interface ReviewCommentPart {
+  blockId: string;
+  id: string;
+  label: string;
 }
 
 /** GET /:id/comments?watch: the board's comments, oldest first. */

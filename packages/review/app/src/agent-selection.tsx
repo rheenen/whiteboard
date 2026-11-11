@@ -7,6 +7,7 @@ import {
 } from "@canvas/ui/icons";
 import type { AgentSelection } from "@review/agent-selection";
 import type { AskAgentId } from "@review/ask/thread-state";
+import type { CommentPart } from "@review/comment-part";
 import * as stylex from "@stylexjs/stylex";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -27,6 +28,7 @@ import {
   useAskAgents,
 } from "./ask-agent-picker";
 import { askAnchor } from "./ask-anchor";
+import { useBoardComments } from "./board-comments";
 import { copyAgentContext } from "./copy-agent-context";
 import { useReviewDebugSettings } from "./debug-settings";
 import { useReviewSession } from "./host/review-session";
@@ -51,6 +53,10 @@ type Selection = Omit<AgentSelection, "revision"> & {
   onDismiss?: () => void;
   /** Hides the toolbar; the shortcuts still work. */
   quiet?: boolean;
+  /** The diagram part the selection is the code of, saved with a comment. */
+  part?: CommentPart;
+  /** Opens straight on the comment composer. */
+  compose?: boolean;
 };
 
 type Select = (selection: Selection | null) => void;
@@ -62,6 +68,8 @@ function payloadOf({
   range: _range,
   onDismiss: _onDismiss,
   quiet: _quiet,
+  part: _part,
+  compose: _compose,
   ...payload
 }: Selection) {
   return payload;
@@ -128,6 +136,7 @@ export function AgentSelectionProvider({
   }, []);
 
   const notify = useNotify();
+  const boardComments = useBoardComments();
 
   const select = useCallback<Select>(
     (value) => {
@@ -189,7 +198,7 @@ export function AgentSelectionProvider({
       if (!value || sameBlock) setCopiedSelection(null);
 
       setChoosing(false);
-      setCommenting(false);
+      setCommenting(Boolean(value?.compose));
       setDraft("");
       setSelection(value);
     },
@@ -310,6 +319,7 @@ export function AgentSelectionProvider({
         body: JSON.stringify({
           selection: anchoredPayload(input.selection),
           body: input.body,
+          ...(input.selection.part && { part: input.selection.part }),
         }),
       });
 
@@ -317,6 +327,7 @@ export function AgentSelectionProvider({
     },
     onSuccess: () => {
       select(null);
+      boardComments?.refresh();
       notify({ kind: "success", text: "Comment saved.", closeAfterMs: 3_000 });
     },
     onError: () =>

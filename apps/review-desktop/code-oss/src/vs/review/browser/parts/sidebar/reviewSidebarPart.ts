@@ -598,7 +598,9 @@ export class ReviewSidebarPart extends Part {
 		const comment = this.comments.get(reviewId)?.find((each) => each.id === commentId);
 		if (!comment) return;
 		const { anchor } = comment;
-		if (anchor.kind === "source") this.emitSurfaceEvent({ event: "revealDiffFile", reviewId, path: anchor.file });
+		// A diagram part's comment opens on its diagram, not on its code.
+		if (anchor.part) this.emitSurfaceEvent({ event: "revealBlock", reviewId, blockId: anchor.part.blockId });
+		else if (anchor.kind === "source") this.emitSurfaceEvent({ event: "revealDiffFile", reviewId, path: anchor.file });
 		else if (anchor.blockId) this.emitSurfaceEvent({ event: "revealBlock", reviewId, blockId: anchor.blockId });
 		else this.emitSurfaceEvent({ event: "showReviewView", view: "review", reviewId });
 	}

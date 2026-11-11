@@ -4,6 +4,7 @@ import path from "node:path";
 import { Writable } from "node:stream";
 
 import type { AgentSelection } from "@review/agent-selection.js";
+import type { CommentPart } from "@review/comment-part.js";
 import { createReviewApi } from "@review/review-api/http.js";
 import { ReviewStore } from "@review/review-api/store.js";
 import { afterEach, beforeEach, expect, it } from "vitest";
@@ -12,7 +13,7 @@ import { runCommentsCli } from "./comments-cli.js";
 
 /** What the comment routes take: a new comment, or a change to one. */
 type CommentRequest =
-  | { selection: AgentSelection; body: string }
+  | { selection: AgentSelection; body: string; part?: CommentPart }
   | { body?: string; resolved?: boolean };
 
 const pins = { repositoryId: "repo", base: "base", head: "head" };
@@ -137,6 +138,58 @@ it("keeps comments on text and on code, and lists them for a PR tool without a s
     anchor: { kind: "document", blockId: "b1", quote: "90 days" },
   });
   expect(listed.comments[0]).not.toHaveProperty("selection");
+});
+
+it("names the diagram part a comment is on, with the code behind it when it has code", async () => {
+  const reviewId = await board();
+  const part = { blockId: "flow", id: "flow:audit:0", label: "Audit writer" };
+
+  const onCode = await (
+    await request(reviewId, "POST", "", {
+      selection: {
+        title: "Audit writer",
+        target: {
+          kind: "code",
+          path: "src/audit.ts",
+          side: "head",
+          startLine: 10,
+          endLine: 14,
+        },
+      },
+      body: "Retry here?",
+      part,
+    })
+  ).json();
+
+  expect(onCode.anchor).toEqual({
+    kind: "source",
+    file: "src/audit.ts",
+    side: "head",
+    fromLine: 10,
+    toLine: 14,
+    part,
+  });
+
+  const withoutCode = await (
+    await request(reviewId, "POST", "", {
+      selection: {
+        title: "Queue",
+        target: { kind: "block", blockId: "flow" },
+      },
+      body: "Which queue?",
+      part: { blockId: "flow", id: "flow:queue", label: "Queue" },
+    })
+  ).json();
+
+  expect(withoutCode.anchor).toEqual({
+    kind: "document",
+    blockId: "flow",
+    part: { blockId: "flow", id: "flow:queue", label: "Queue" },
+  });
+
+  const listed = JSON.parse(cli({ review: reviewId, json: true }).stdout);
+
+  expect(listed.comments[0].anchor.part).toEqual(part);
 });
 
 it("changes the hash when the body changes, not when the comment is resolved", async () => {

@@ -43,6 +43,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { DiagramCommentScope, DiagramPartPin } from "./board-comments";
 import { useReviewDebugSettings } from "./debug-settings";
 import { DiagramHeader } from "./diagram-header";
 import { diagramStyles } from "./diagram-styles";
@@ -353,7 +354,7 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
   const { portalTarget } = useDiagramTourShell(tourOpen, closeTour);
 
   return (
-    <>
+    <DiagramCommentScope.Provider value={id}>
       <SequenceDiagramFigure
         sequence={sequence}
         theme={theme}
@@ -383,7 +384,7 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
             portalTarget,
           )
         : null}
-    </>
+    </DiagramCommentScope.Provider>
   );
 }
 
@@ -914,6 +915,7 @@ function SequenceMessageEdge(
           >
             {data.message.label}
           </span>
+          <DiagramPartPin partId={data.message.id} label={data.message.label} />
         </div>
       </EdgeLabelRenderer>
     </>
