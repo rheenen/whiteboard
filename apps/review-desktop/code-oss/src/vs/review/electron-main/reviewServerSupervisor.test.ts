@@ -58,8 +58,8 @@ test('the sharing setting turns sharing off, and turning it on keeps an off from
 		channel: 'stable',
 	} as const;
 
-	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: false }).DEV_REVIEW_SHARING_DISABLED, '1');
-	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: true }).DEV_REVIEW_SHARING_DISABLED, undefined);
+	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: false }).DEV_REVIEW_DESKTOP_SHARING, 'off');
+	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: true }).DEV_REVIEW_DESKTOP_SHARING, 'on');
 	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: { DEV_REVIEW_SHARING_DISABLED: '1' }, sharingEnabled: true }).DEV_REVIEW_SHARING_DISABLED, '1');
 });
 

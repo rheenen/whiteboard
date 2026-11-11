@@ -534,8 +534,7 @@ export function ApiCanvas({
   );
 }
 
-/** Drops a board's snapshot once no stream keeps it current. */
-/** Withholds sharing when the installation turned it off. */
+/** Withholds share links when the installation turned sharing off. */
 function SharingProvider({
   value,
   children,
@@ -546,13 +545,17 @@ function SharingProvider({
   const disabled =
     useSharingAccount(value?.client, value !== null).data?.disabled === true;
 
+  const shared = useMemo(
+    () => (disabled && value ? { ...value, linksDisabled: true } : value),
+    [disabled, value],
+  );
+
   return (
-    <SharingContext.Provider value={disabled ? null : value}>
-      {children}
-    </SharingContext.Provider>
+    <SharingContext.Provider value={shared}>{children}</SharingContext.Provider>
   );
 }
 
+/** Drops a board's snapshot once no stream keeps it current. */
 function unfollowed(queryClient: QueryClient, reviewId: string) {
   queryClient.removeQueries({
     queryKey: canvasQueryKeys.board(reviewId, undefined),

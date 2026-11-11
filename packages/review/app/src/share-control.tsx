@@ -42,6 +42,8 @@ export const SharingContext = createContext<{
   version: number;
   sender?: string;
   cloneUrl?: string;
+  /** The installation turned sharing off: no links, but files still export. */
+  linksDisabled?: boolean;
 } | null>(null);
 
 /** The version a popover shares, frozen when it opens, and the idempotency
@@ -65,7 +67,9 @@ const actionError = (error: Error | null) =>
 
 /** Whether this review can be shared, so a menu may offer Share. */
 export function useCanShare(): boolean {
-  return useContext(SharingContext) !== null;
+  const context = useContext(SharingContext);
+
+  return context !== null && !context.linksDisabled;
 }
 
 export function ShareControl({
@@ -76,7 +80,8 @@ export function ShareControl({
   folded?: boolean;
   handle?: Ref<{ open(): void }>;
 } = {}) {
-  const context = useContext(SharingContext);
+  const sharing = useContext(SharingContext);
+  const context = sharing?.linksDisabled ? null : sharing;
   const session = useOptionalReviewSession();
   const queryClient = useQueryClient();
   const client = context?.client;

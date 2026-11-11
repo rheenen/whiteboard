@@ -127,36 +127,45 @@ it("keeps the corner's Move to Trash enabled and focused while the move is in fl
   expect(document.activeElement).toBe(button);
 });
 
-it("offers Export file… while the board can be shared, and asks the host to write it", async () => {
-  const post = vi.fn<ReviewCanvasBridge["post"]>(async () => ({ ok: true }));
-  const session = testReviewSession({}, { post });
+it.each([
+  ["while the board can be shared", shareable],
+  [
+    "while the installation turned share links off",
+    { ...shareable, linksDisabled: true },
+  ],
+])(
+  "offers Export file… %s, and asks the host to write it",
+  async (_, value) => {
+    const post = vi.fn<ReviewCanvasBridge["post"]>(async () => ({ ok: true }));
+    const session = testReviewSession({}, { post });
 
-  const container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
 
-  await act(async () =>
-    root?.render(
-      <ReviewSessionProvider session={session}>
-        <CanvasUiContext.Provider value={ui}>
-          <ReviewProvider>
-            <SharingContext.Provider value={shareable}>
-              <PageMoreMenu views={[]} onShowView={() => {}} />
-            </SharingContext.Provider>
-          </ReviewProvider>
-        </CanvasUiContext.Provider>
-      </ReviewSessionProvider>,
-    ),
-  );
+    await act(async () =>
+      root?.render(
+        <ReviewSessionProvider session={session}>
+          <CanvasUiContext.Provider value={ui}>
+            <ReviewProvider>
+              <SharingContext.Provider value={value}>
+                <PageMoreMenu views={[]} onShowView={() => {}} />
+              </SharingContext.Provider>
+            </ReviewProvider>
+          </CanvasUiContext.Provider>
+        </ReviewSessionProvider>,
+      ),
+    );
 
-  await act(async () =>
-    container.querySelector<HTMLElement>('[aria-label="More"]')!.click(),
-  );
-  expect(menu?.items.map((item) => item.label)).toContain("Export file…");
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="More"]')!.click(),
+    );
+    expect(menu?.items.map((item) => item.label)).toContain("Export file…");
 
-  await act(async () => menu!.onSelect("export"));
-  expect(post).toHaveBeenCalledWith({
-    name: "exportReviewFile",
-    args: { reviewId: "r1", version: 3 },
-  });
-});
+    await act(async () => menu!.onSelect("export"));
+    expect(post).toHaveBeenCalledWith({
+      name: "exportReviewFile",
+      args: { reviewId: "r1", version: 3 },
+    });
+  },
+);

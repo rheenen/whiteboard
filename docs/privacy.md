@@ -67,13 +67,23 @@ An installation can turn sharing off in any of these ways:
 Off always wins: no source can turn sharing on again while another one turns it
 off. A policy file that Whiteboard cannot read or parse also turns sharing off.
 
+The Desktop setting writes a `sharing-disabled` file in `~/.dev/`, so the CLI
+and the agent trace hooks follow it too, also the ones that Desktop did not
+start. Turning the setting on again removes the file. Desktop also writes the
+file on each remote host it attaches to, when the Whiteboard version there
+knows the setting. An older version on a remote host does not, so set
+`DEV_REVIEW_SHARING_DISABLED=1` or install the policy file there.
+
 With sharing off, Whiteboard sends nothing to the share service or the hosted
 trace store. It does not sign in, upload or revoke a whiteboard, open share
 links, or capture traces to the hosted store. `whiteboard share`,
 `whiteboard share revoke`, `whiteboard login` and `whiteboard whoami` exit with
 status 2, and Desktop hides the Share button and the sign-in in Settings.
-`whiteboard export`, opening `.whiteboard` files and `whiteboard logout` still
-work.
+`whiteboard export`, **Export file…**, opening `.whiteboard` files and
+`whiteboard logout` still work.
+
+Turning sharing off does not change telemetry, error reports or bug reports.
+Each of them has its own switch, described above.
 
 ## Hosted trace store
 

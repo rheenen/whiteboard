@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 
-import { type runStoreLogin, writeStoreAuth } from "@dev.fast/trace-core";
+import {
+  hostedStoreDisabled,
+  type runStoreLogin,
+  writeStoreAuth,
+} from "@dev.fast/trace-core";
 import { ReviewInputError } from "@dev.fast/whiteboard-document";
 import { runReviewCli } from "@review/cli-runner.js";
 import { Hono } from "hono";
@@ -13,6 +17,7 @@ import { createShareFixture } from "../../test/fixtures/share/create.js";
 import {
   SHARING_DISABLED,
   SHARING_POLICY_FILE,
+  applyDesktopSharingSetting,
   isSharingDisabled,
 } from "./disabled.js";
 import { mountSharingHost, mountSharingPublisher } from "./host.js";
@@ -34,42 +39,65 @@ async function scratch() {
 
 it("turns sharing off by the environment, the install policy, or both", async () => {
   const root = await scratch();
+  const home = { DEV_REVIEW_HOME: await scratch() };
 
   const policy = (text: string) =>
     writeFile(path.join(root, SHARING_POLICY_FILE), text);
 
-  expect(isSharingDisabled(root, {})).toBe(false);
+  expect(isSharingDisabled(root, home)).toBe(false);
 
   for (const value of ["1", "true", "TRUE"])
     expect(
-      isSharingDisabled(root, { DEV_REVIEW_SHARING_DISABLED: value }),
+      isSharingDisabled(root, { ...home, DEV_REVIEW_SHARING_DISABLED: value }),
     ).toBe(true);
 
   for (const value of ["0", "false", ""])
     expect(
-      isSharingDisabled(root, { DEV_REVIEW_SHARING_DISABLED: value }),
+      isSharingDisabled(root, { ...home, DEV_REVIEW_SHARING_DISABLED: value }),
     ).toBe(false);
 
   await policy('{"sharing": "disabled"}');
-  expect(isSharingDisabled(root, {})).toBe(true);
-  expect(isSharingDisabled(root, { DEV_REVIEW_SHARING_DISABLED: "1" })).toBe(
-    true,
-  );
+  expect(isSharingDisabled(root, home)).toBe(true);
+  expect(
+    isSharingDisabled(root, { ...home, DEV_REVIEW_SHARING_DISABLED: "1" }),
+  ).toBe(true);
   // The environment cannot undo the install policy.
-  expect(isSharingDisabled(root, { DEV_REVIEW_SHARING_DISABLED: "0" })).toBe(
-    true,
-  );
+  expect(
+    isSharingDisabled(root, { ...home, DEV_REVIEW_SHARING_DISABLED: "0" }),
+  ).toBe(true);
 
   for (const text of ["{", "[]", '{"sharing": "on"}', ""]) {
     await policy(text);
-    expect(isSharingDisabled(root, {})).toBe(true);
+    expect(isSharingDisabled(root, home)).toBe(true);
   }
 
   await policy('{"sharing": "enabled"}');
-  expect(isSharingDisabled(root, {})).toBe(false);
-  expect(isSharingDisabled(root, { DEV_REVIEW_SHARING_DISABLED: "1" })).toBe(
-    true,
-  );
+  expect(isSharingDisabled(root, home)).toBe(false);
+  expect(
+    isSharingDisabled(root, { ...home, DEV_REVIEW_SHARING_DISABLED: "1" }),
+  ).toBe(true);
+
+  await rm(path.join(root, SHARING_POLICY_FILE));
+  expect(isSharingDisabled(root, home)).toBe(false);
+});
+
+it("follows the Desktop setting through the user's marker, both ways", async () => {
+  const root = await scratch();
+  const env = { DEV_REVIEW_HOME: await scratch() };
+
+  applyDesktopSharingSetting({ ...env, DEV_REVIEW_DESKTOP_SHARING: "off" });
+  expect(isSharingDisabled(root, env)).toBe(true);
+  // A process that the Desktop did not start, such as an agent trace hook.
+  expect(hostedStoreDisabled(env)).toBe(true);
+
+  applyDesktopSharingSetting(env);
+  expect(isSharingDisabled(root, env)).toBe(true);
+
+  applyDesktopSharingSetting({ ...env, DEV_REVIEW_DESKTOP_SHARING: "on" });
+  expect(isSharingDisabled(root, env)).toBe(false);
+  expect(
+    isSharingDisabled(root, { ...env, DEV_REVIEW_SHARING_DISABLED: "1" }),
+  ).toBe(true);
 });
 
 it("refuses every upload and sign-in route without reaching the network, and still exports", async () => {

@@ -15,6 +15,9 @@ export {
   HostedStoreDisabledError,
   hostedStoreDisabled,
   SHARING_DISABLED_ENV,
+  SHARING_DISABLED_MARKER,
+  sharingMarkerPath,
+  writeSharingMarker,
   StoreApiError,
   StoreClient,
 } from "./store-client";

@@ -274,6 +274,12 @@ export function installFailureText(alias: string, version: string, step: Install
 	return plain(`Installing Whiteboard ${version} on ${alias} failed${what}: ${said ? said[2] : message}`);
 }
 
+/** Puts the Desktop's sharing setting in the attach's environment; a host
+ * runtime that predates it ignores the variable. */
+export function withSharingSetting(script: string, enabled: boolean | undefined): string {
+	return enabled === undefined ? script : `DEV_REVIEW_DESKTOP_SHARING=${enabled ? "on" : "off"}\nexport DEV_REVIEW_DESKTOP_SHARING\n${script}`;
+}
+
 export interface ReviewRemoteHostOptions {
 	readonly session: ReviewSshSession;
 	readonly spawn: SpawnSsh;
@@ -281,6 +287,8 @@ export interface ReviewRemoteHostOptions {
 	desktopVersion(): Promise<string>;
 	readonly desktopCommit?: string;
 	groups?(): Promise<readonly string[]>;
+	/** The Desktop's sharing setting, which the attach records on the host. */
+	sharingEnabled?(): boolean;
 	freePort(): Promise<number>;
 	report(host: ReviewGatewayHost): void;
 	capture?(name: string, properties: Record<string, string | number | boolean>): void;
@@ -803,7 +811,7 @@ export class ReviewRemoteHost {
 
 	private async attach(env: NodeJS.ProcessEnv, script: AttachScript): Promise<ReviewRemoteAttach> {
 		const groups = (await this.options.groups?.()) ?? [];
-		const result = await this.run(sshExecArgs(this.options.session, env), this.timeouts.attach, script(groups));
+		const result = await this.run(sshExecArgs(this.options.session, env), this.timeouts.attach, withSharingSetting(script(groups), this.options.sharingEnabled?.()));
 		const parsed = parseRemoteAttach(result.stdout);
 		if (parsed && "attach" in parsed) {
 			const { incompatibleRunning, replaced } = parsed.attach;

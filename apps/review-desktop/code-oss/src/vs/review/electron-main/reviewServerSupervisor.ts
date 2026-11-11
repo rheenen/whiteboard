@@ -82,7 +82,7 @@ export interface ReviewServerSupervisorOptions {
   readonly logError: (message: string) => void;
   readonly createProcess: () => IReviewServerProcess;
   readonly telemetryEnabled?: boolean;
-  /** The `review.sharing.enabled` setting; off sets DEV_REVIEW_SHARING_DISABLED. */
+  /** The `review.sharing.enabled` setting, as DEV_REVIEW_DESKTOP_SHARING. */
   readonly sharingEnabled?: boolean;
   readonly serviceOrigin?: string;
   readonly userExtensionsPath?: string;
@@ -132,9 +132,10 @@ export function createReviewServerEnvironment(options: {
     DEV_FAST_REVIEW_TELEMETRY_DISABLED: options.telemetryEnabled
       ? undefined
       : "1",
-    // Off always wins: on leaves an off from the shell in place.
-    ...(options.sharingEnabled === false && {
-      DEV_REVIEW_SHARING_DISABLED: "1",
+    // The server records it as the user's marker. On leaves an off from the
+    // shell (DEV_REVIEW_SHARING_DISABLED) in place: off always wins.
+    ...(options.sharingEnabled !== undefined && {
+      DEV_REVIEW_DESKTOP_SHARING: options.sharingEnabled ? "on" : "off",
     }),
     ...(options.serviceOrigin && {
       DEV_REVIEW_SERVICE_ORIGIN: options.serviceOrigin,

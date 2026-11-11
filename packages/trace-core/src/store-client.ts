@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 import { type JsonValue, parseJsonText } from "@dev.fast/json";
 import {
   type BeginUploadRequest,
@@ -29,6 +32,7 @@ import {
 import { z } from "zod";
 
 import { requestStoreAuthorization } from "./store-authorization";
+import { devReviewHome } from "./trace-home";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -64,23 +68,49 @@ export class StoreApiError extends Error {
   }
 }
 
-/** Set to `1` or `true` by an installation that turned sharing off. The
- * review runtime also sets it from its install policy file. */
-export const SHARING_DISABLED_ENV = "DEV_REVIEW_SHARING_DISABLED";
-
 /** Thrown before any request when the installation turned sharing off. */
-export class HostedStoreDisabledError extends Error {
+export class HostedStoreDisabledError extends StoreApiError {
   constructor() {
-    super("Sharing is disabled on this installation");
+    super("forbidden", 403, "Sharing is disabled on this installation");
     this.name = "HostedStoreDisabledError";
   }
 }
 
-/** Whether the environment turns the hosted store off. */
+/** Set to `1` or `true` by an installation that turned sharing off. The
+ * review runtime also sets it from its install policy file. */
+export const SHARING_DISABLED_ENV = "DEV_REVIEW_SHARING_DISABLED";
+
+/** A file in the Review home that says this user turned sharing off, for
+ * example with the Desktop setting. Every process reads it, also the agent
+ * trace hooks that the Desktop server did not start. */
+export const SHARING_DISABLED_MARKER = "sharing-disabled";
+
+export function sharingMarkerPath(env: NodeJS.ProcessEnv = process.env) {
+  return path.join(devReviewHome(env), SHARING_DISABLED_MARKER);
+}
+
+/** Writes the marker when `disabled`, and removes it otherwise. */
+export function writeSharingMarker(
+  disabled: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const marker = sharingMarkerPath(env);
+
+  if (!disabled) {
+    rmSync(marker, { force: true });
+
+    return;
+  }
+
+  mkdirSync(path.dirname(marker), { recursive: true, mode: 0o700 });
+  writeFileSync(marker, "", { mode: 0o600 });
+}
+
+/** Whether the environment or the user's marker turns the hosted store off. */
 export function hostedStoreDisabled(env: NodeJS.ProcessEnv = process.env) {
   const flag = env[SHARING_DISABLED_ENV]?.trim().toLowerCase();
 
-  return flag === "1" || flag === "true";
+  return flag === "1" || flag === "true" || existsSync(sharingMarkerPath(env));
 }
 
 export interface StoreClientOptions {

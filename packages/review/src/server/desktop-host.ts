@@ -10,7 +10,10 @@ import { openReviewProfile } from "@review/review-api/profile";
 import { ensureBundledRustAnalyzer } from "@review/review-bundled-tools";
 import { devReviewHome } from "@review/review-home-paths";
 import { ReviewTelemetry } from "@review/review-telemetry";
-import { applySharingPolicy } from "@review/sharing/disabled";
+import {
+  applyDesktopSharingSetting,
+  applySharingPolicy,
+} from "@review/sharing/disabled";
 import { reviewTelemetryChannel } from "@review/telemetry-config";
 
 import {
@@ -29,6 +32,7 @@ export async function runDesktopHost(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   applySharingPolicy(env);
+  applyDesktopSharingSetting(env);
 
   // Port 0 lets the OS choose; the ready event below reports what was bound.
   const port = requiredPort(env.DEV_FAST_REVIEW_SERVER_PORT);
@@ -173,9 +177,12 @@ export async function runDesktopHost(
     },
     (hosts) => server.setRemoteHosts(hosts),
     (enabled) => {
-      // Turning sharing off applies at once; turning it on again waits for
-      // a restart, so an off from the shell or the policy always wins.
-      if (!enabled) process.env.DEV_REVIEW_SHARING_DISABLED = "1";
+      // Every gate reads the marker per request, so both ways apply at once;
+      // an off from the shell or the install policy still wins.
+      applyDesktopSharingSetting({
+        ...env,
+        DEV_REVIEW_DESKTOP_SHARING: enabled ? "on" : "off",
+      });
     },
   );
   process.once("SIGINT", () => {

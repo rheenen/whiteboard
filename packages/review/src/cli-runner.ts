@@ -102,7 +102,11 @@ import {
   serverNotReady,
 } from "./server-discovery";
 import { aliasInstallationToAccount } from "./server/account-alias";
-import { isSharingDisabled, refuseDisabledSharing } from "./sharing/disabled";
+import {
+  applyDesktopSharingSetting,
+  isSharingDisabled,
+  refuseDisabledSharing,
+} from "./sharing/disabled";
 import { setTraceAttribute, span } from "./startup-trace";
 import type { ReviewTelemetrySurface } from "./telemetry-config";
 import {
@@ -587,6 +591,9 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     const stateDir = reviewServerStateDir(authoringEnv(options.stateDir));
 
     const { remoteAttach } = await import("./remote-attach.js");
+
+    // The attaching Desktop's sharing setting, for every process on this host.
+    applyDesktopSharingSetting(env);
 
     let attach: Awaited<ReturnType<typeof remoteAttach>>;
 

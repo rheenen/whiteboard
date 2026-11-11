@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import type { JsonValue } from "@dev.fast/json";
 import { storeRoutes } from "@dev.fast/trace-protocol";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +11,8 @@ import {
   STORE_UPGRADE_REQUIRED_MESSAGE,
   StoreApiError,
   StoreClient,
+  hostedStoreDisabled,
+  writeSharingMarker,
 } from "./store-client";
 
 function jsonResponse(body: JsonValue, status = 200) {
@@ -40,6 +46,37 @@ describe("StoreClient", () => {
       client.createStore({ owner: "a", name: "b" }),
     ).rejects.toBeInstanceOf(HostedStoreDisabledError);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("follows the user's sharing marker, also after it was removed", async () => {
+    const home = await mkdtemp(path.join(tmpdir(), "sharing-marker-"));
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      jsonResponse({ user: { id: "u", name: "n" } }),
+    );
+
+    const env: NodeJS.ProcessEnv = { DEV_REVIEW_HOME: home };
+
+    const client = new StoreClient({
+      origin: "https://app.dev.fast",
+      token: "tok",
+      fetch,
+      env,
+    });
+
+    try {
+      writeSharingMarker(true, env);
+      expect(hostedStoreDisabled(env)).toBe(true);
+      await expect(client.session()).rejects.toBeInstanceOf(StoreApiError);
+      expect(fetch).not.toHaveBeenCalled();
+
+      writeSharingMarker(false, env);
+      expect(hostedStoreDisabled(env)).toBe(false);
+      await client.session();
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("sends the bearer token and parses the envelope on error", async () => {

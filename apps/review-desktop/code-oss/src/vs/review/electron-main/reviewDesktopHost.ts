@@ -410,6 +410,9 @@ export class ReviewDesktopHost extends Disposable {
       desktopCommit: this.productService.commit,
       groups: () =>
         reviewEnabledExtensionGroups(this.environmentMainService.extensionsPath),
+      sharingEnabled: () =>
+        this.configurationService.getValue<boolean>(REVIEW_SHARING_SETTING) !==
+        false,
       send: (hosts) => this.supervisor.setRemoteHosts(hosts),
       capture,
       log: (message) => this.logService.info(`[Remote hosts] ${message}`),
