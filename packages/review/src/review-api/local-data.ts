@@ -68,6 +68,7 @@ import {
 import { reviewManagedCheckoutRoot } from "@review/review-checkout-paths.js";
 import { ensureReviewPinnedCheckout } from "@review/review-head-checkout.js";
 import { StructuralComparisons } from "@review/server/structural-comparisons.js";
+import { COMMIT_ID } from "@review/sharing/repository.js";
 import { resolveSoftwareMapDiffCounts } from "@review/software-map-diff-counts.js";
 import {
   type NormalizedSoftwareModel,
@@ -514,6 +515,17 @@ export class LocalReviewData {
   /** A document read that needs default pins: its own, or for a plan its
    * repository's live checkout with base at head; 409 when it has neither. */
   async documentPins(snapshot: Snapshot): Promise<Pins> {
+    // Peeks of a board opened read-only read the file's own lines.
+    if (
+      snapshot.pins &&
+      this.readOnlyCommits(
+        snapshot.pins.repositoryId,
+        snapshot.pins.base,
+        snapshot.pins.head,
+      )
+    )
+      return snapshot.pins;
+
     const pins =
       (await this.sourcePins(snapshot)) ??
       (snapshot.target?.kind === "project"
@@ -1024,7 +1036,12 @@ export class LocalReviewData {
 
     if (!snapshot.pins) return undefined;
 
-    if (!existsSync(this.store.repositoryPath(snapshot.pins.repositoryId)))
+    // A board opened read-only has no checkout: commits, diffs and maps
+    // are unavailable, as for a removed one.
+    if (
+      !existsSync(this.store.repositoryPath(snapshot.pins.repositoryId)) ||
+      this.store.excerpts.has(snapshot.pins.repositoryId)
+    )
       throw unavailableCheckout();
 
     return snapshot.pins;
@@ -1157,6 +1174,21 @@ export class LocalReviewData {
       throw new ReviewInputError("A project target has no commits.");
 
     const vcs = await this.vcs(target.repositoryId);
+
+    if (
+      !vcs &&
+      target.kind === "commits" &&
+      target.base !== undefined &&
+      this.readOnlyCommits(target.repositoryId, target.base, target.head)
+    )
+      return {
+        target,
+        pins: {
+          repositoryId: target.repositoryId,
+          base: target.base,
+          head: target.head,
+        },
+      };
 
     if (!vcs) throw unavailableCheckout();
 
@@ -1615,7 +1647,24 @@ export class LocalReviewData {
       ? resolved.commit
       : undefined;
   }
+  /** A file opened read-only, without a checkout: its commits are the
+   * file's, as it wrote them, and its excerpts stand in for Git. */
+  private readOnlyCommits(repositoryId: string, base: string, head: string) {
+    return (
+      COMMIT_ID.test(base) &&
+      COMMIT_ID.test(head) &&
+      this.store.excerpts.has(repositoryId)
+    );
+  }
+
   async validatePins(pins: Pins) {
+    if (
+      !pins.worktreeRevision &&
+      this.readOnlyCommits(pins.repositoryId, pins.base, pins.head) &&
+      !(await this.vcs(pins.repositoryId))
+    )
+      return;
+
     if (pins.worktreeRevision) {
       if (!(await this.vcs(pins.repositoryId))) throw unavailableCheckout();
 
@@ -1660,18 +1709,26 @@ export class LocalReviewData {
               })
             : null;
 
-    if (text === null)
+    // A board opened read-only from a file: its excerpts stand in for Git.
+    const read =
+      text ??
+      (vcs
+        ? undefined
+        : this.store.excerpts.file(pins.repositoryId, commit, file)) ??
+      null;
+
+    if (read === null)
       throw new ReviewInputError(
         "File is unavailable at the pinned commit.",
         404,
       );
 
-    if (!allowBinary && text.includes("\0"))
+    if (!allowBinary && read.includes("\0"))
       throw new ReviewInputError(
         "Binary files cannot be used as code references.",
       );
 
-    return { file, side, commit, text };
+    return { file, side, commit, text: read };
   }
 
   async tree(

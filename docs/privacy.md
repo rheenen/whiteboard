@@ -16,10 +16,10 @@ sections below describe what the upstream Whiteboard does.
 
 ## What stays local
 
-Whiteboard keeps whiteboards, including copies opened from share links, in
-`~/.dev/review-api.db`, repositories it clones for share links in
-`~/.dev/shared-repositories/`, and app state in `~/.dev/review-desktop/`. These
-names predate the Whiteboard rename.
+Whiteboard keeps whiteboards, including copies opened from share links and
+your comments on them, in `~/.dev/review-api.db`, repositories it clones for
+share links in `~/.dev/shared-repositories/`, and app state in
+`~/.dev/review-desktop/`. These names predate the Whiteboard rename.
 
 ## Telemetry and error reports
 
@@ -60,7 +60,10 @@ from the repository's remote with the recipient's own access.
 
 `whiteboard export` writes the same copy to a `.whiteboard` file and uploads
 nothing. Whiteboard Desktop opens such a file on a checkout of its repository
-that you already have, and never clones one for it.
+that you already have. Without one, it asks whether to clone the repository
+into a folder you choose (by default `~/projects`), or to open the file
+read-only. A read-only board shows the source lines the file carries, and
+keeps them in `~/.dev/review-api.db`; it has no commits, diffs or maps.
 `whiteboard share revoke <share-id>` stops future downloads.
 
 ### Turning sharing off

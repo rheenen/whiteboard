@@ -1,4 +1,6 @@
-import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import path from "node:path";
 
 import { type VcsArg, gitAt } from "@dev.fast/local-vcs";
 import {
@@ -230,6 +232,57 @@ export async function cloneSharedRepository(root: string, url: string) {
   }
 
   await sharedGit(root, ["checkout", "--detach", "FETCH_HEAD"]);
+}
+
+/** The folder name a clone of `url` gets, as `git clone` would pick it. */
+export function repositoryName(url: string): string {
+  const last = url
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "")
+    .split(/[/:]/)
+    .at(-1);
+
+  let name = "";
+
+  try {
+    name = decodeURIComponent(last ?? "");
+  } catch {
+    name = last ?? "";
+  }
+
+  name = name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^[.-]+/, "");
+
+  return name || "repository";
+}
+
+/** A full clone of a file's repository for the reader to keep, into a new
+ * folder `name` in `parent`. Only https and ssh remotes; no hooks run. */
+export async function cloneForReader(
+  parent: string,
+  name: string,
+  url: string,
+): Promise<string> {
+  if (!/^[A-Za-z0-9_.][A-Za-z0-9_.-]*$/.test(name) || name === "..")
+    throw new ReviewInputError("Use a plain folder name for the clone.");
+
+  const root = path.join(parent, name);
+
+  if (existsSync(root))
+    throw new ReviewInputError(
+      `${root} already exists. Choose another folder, or open that checkout in Whiteboard.`,
+      409,
+    );
+
+  await mkdir(parent, { recursive: true });
+
+  try {
+    await sharedGit(parent, ["clone", "--quiet", { remote: url }, name]);
+  } catch (error) {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+    throw fetchError(stderrOf(error));
+  }
+
+  return root;
 }
 
 export async function repositoryReady(

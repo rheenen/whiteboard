@@ -79,6 +79,7 @@ import {
   remoteGroup,
   repositoryOriginAt,
 } from "./checkout-groups.js";
+import { ExcerptSources } from "./excerpt-sources.js";
 import { type BoardLinkPreview, boardLinkPreview } from "./link-preview.js";
 import {
   pullRequestKey,
@@ -525,6 +526,7 @@ export class ReviewStore {
   readonly activity: ReviewActivity;
   readonly askHistory: AskHistory;
   readonly comments: ReviewComments;
+  readonly excerpts: ExcerptSources;
   private readonly db: DatabaseSync;
   private pending: Promise<unknown> = Promise.resolve();
   private readonly preparing = new Set<Promise<unknown>>();
@@ -805,6 +807,7 @@ export class ReviewStore {
     this.comments = new ReviewComments(this.db, (id) =>
       this.assertOutOfTrash(id),
     );
+    this.excerpts = new ExcerptSources(this.db);
 
     this.purgeExpired();
     this.purgeTimer = setInterval(() => this.purgeExpired(), 60_000);

@@ -34,6 +34,7 @@ import {
   whiteboardFileText,
 } from "./file.js";
 import {
+  MissingCheckoutError,
   type ShareImport,
   importShare,
   needsRepository,
@@ -42,9 +43,11 @@ import {
   shareKey,
 } from "./import.js";
 import {
+  cloneForReader,
   type cloneSharedRepository,
   type fetchPinnedRepository,
   readShareRepository,
+  repositoryName,
 } from "./repository.js";
 
 interface LoginState {
@@ -92,8 +95,19 @@ function assertSharingEnabled(
 
 const importSchema = z.union([
   z.strictObject({ url: z.string().max(2048) }),
-  z.strictObject({ path: z.string().min(1).max(4096) }),
+  z.strictObject({
+    path: z.string().min(1).max(4096),
+    /** Open without a checkout, on the lines the file carries. */
+    readOnly: z.boolean().optional(),
+  }),
 ]);
+
+const cloneSchema = z.strictObject({
+  url: z.string().min(1).max(2048),
+  /** The folder to clone into, and the new folder's name in it. */
+  parent: z.string().min(1).max(4096),
+  name: z.string().min(1).max(255),
+});
 
 interface ImportStatus {
   stage:
@@ -106,6 +120,9 @@ interface ImportStatus {
   /** The copy, once it is made. */
   reviewId?: string;
   error?: string;
+  /** The file needs a checkout of this repository; Desktop offers to clone
+   * it, or to open the file read-only. */
+  missingCheckout?: { remote?: string; name: string };
 }
 
 /** Mounted behind local host authentication. Account credentials never enter the renderer. */
@@ -248,6 +265,9 @@ export function mountSharingHost(
     fromFile,
   });
 
+  // The remotes a file asked for, the only ones Desktop may clone here.
+  const offeredRemotes = new Set<string>();
+
   const startImport = (
     id: string,
     initial: "downloading" | "reading",
@@ -269,6 +289,15 @@ export function mountSharingHost(
         })
         .catch((error) => {
           status.stage = "error";
+
+          if (error instanceof MissingCheckoutError) {
+            if (error.remote) offeredRemotes.add(error.remote);
+            status.missingCheckout = {
+              ...(error.remote && { remote: error.remote }),
+              name: error.remote ? repositoryName(error.remote) : "repository",
+            };
+          }
+
           status.error =
             error instanceof ReviewInputError ||
             (error instanceof ShareRequestError && error.status !== 404)
@@ -281,6 +310,28 @@ export function mountSharingHost(
 
     return { reviewId: id, ...status };
   };
+
+  /** Clones a repository a file asked for into a folder the reader chose,
+   * and opens it in Whiteboard. */
+  app.post("/sharing/clone", async (context) => {
+    const input = cloneSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    if (!offeredRemotes.has(input.url))
+      throw new ReviewInputError(
+        "Open the whiteboard file again, then clone its repository.",
+        409,
+      );
+
+    if (!path.isAbsolute(input.parent))
+      throw new ReviewInputError("Use an absolute folder path.", 400);
+
+    const root = await cloneForReader(input.parent, input.name, input.url);
+    const repository = await data.register(root);
+
+    return context.json({ path: root, repositoryId: repository.id });
+  });
 
   app.post("/sharing/import", async (context) => {
     const input = importSchema.parse(
@@ -298,7 +349,9 @@ export function mountSharingHost(
         );
       });
 
-      const key = whiteboardFileKey(text);
+      // A read-only copy is its own: a later import on a checkout makes
+      // an ordinary one.
+      const key = `${whiteboardFileKey(text)}${input.readOnly ? ":read-only" : ""}`;
       const copy = () => store.copiesOf(key)[0]?.reviewId;
 
       return context.json(
@@ -311,7 +364,10 @@ export function mountSharingHost(
               async () =>
                 copy() ??
                 importShare(
-                  shareInput(onStage, true),
+                  {
+                    ...shareInput(onStage, true),
+                    readOnly: input.readOnly,
+                  },
                   key,
                   parseWhiteboardFile(text),
                 ),

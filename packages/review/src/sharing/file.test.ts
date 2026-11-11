@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +20,7 @@ import {
 } from "./file.js";
 import { mountSharingHost, mountSharingPublisher } from "./host.js";
 import {
+  cloneForReader,
   type cloneSharedRepository,
   fetchPinnedRepository,
   readShareRepository,
@@ -223,7 +225,9 @@ async function recipientApi() {
   const file = path.join(sender.root, "board.whiteboard");
   await writeFile(file, text);
 
-  const open = async (body: { path: string } | { url: string }) => {
+  const open = async (
+    body: { path: string; readOnly?: boolean } | { url: string },
+  ) => {
     const started = await api.request("/sharing/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -243,11 +247,23 @@ async function recipientApi() {
     }
   };
 
+  const clone = async (body: { url: string; parent: string; name: string }) => {
+    const response = await api.request("/sharing/clone", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    return { status: response.status, ...(await response.json()) };
+  };
+
   return {
     sender,
     recipient,
+    text,
     file,
     open,
+    clone,
     checkout,
     fetchRepository,
     cloneRepository,
@@ -283,6 +299,82 @@ it("never clones for a file: it asks for a checkout of the repository", async ()
   });
   expect(fetchRepository).not.toHaveBeenCalled();
   expect(cloneRepository).not.toHaveBeenCalled();
+});
+
+it("offers to clone the repository a file needs, and clones only that one", async () => {
+  const { sender, file, open, clone } = await recipientApi();
+
+  expect(await open({ path: file })).toMatchObject({
+    stage: "error",
+    missingCheckout: { remote: sender.repository.cloneUrl, name: "review" },
+  });
+
+  expect(
+    await clone({
+      url: `file://${sender.repo}`,
+      parent: sender.root,
+      name: "elsewhere",
+    }),
+  ).toMatchObject({ status: 409 });
+});
+
+it("clones into a new folder only, and leaves nothing behind when it fails", async () => {
+  const { sender } = await recipientApi();
+
+  const root = await cloneForReader(
+    path.join(sender.root, "projects"),
+    "review",
+    `file://${sender.repo}`,
+  );
+
+  expect(
+    execFileSync("git", ["-C", root, "rev-parse", "--is-inside-work-tree"])
+      .toString()
+      .trim(),
+  ).toBe("true");
+  await expect(
+    cloneForReader(
+      path.join(sender.root, "projects"),
+      "review",
+      `file://${sender.repo}`,
+    ),
+  ).rejects.toThrow(/already exists/);
+  await expect(
+    cloneForReader(sender.root, "../out", `file://${sender.repo}`),
+  ).rejects.toThrow(/plain folder name/);
+  await expect(
+    cloneForReader(sender.root, "gone", `file://${sender.root}/missing`),
+  ).rejects.toThrow(ReviewInputError);
+  expect(existsSync(path.join(sender.root, "gone"))).toBe(false);
+});
+
+it("opens a file read-only without a checkout, reading the lines it carries", async () => {
+  const { recipient, text, file, open, fetchRepository } = await recipientApi();
+
+  const opened = await open({ path: file, readOnly: true });
+
+  expect(opened.error).toBeUndefined();
+  expect(opened.stage).toBe("ready");
+  expect(fetchRepository).not.toHaveBeenCalled();
+
+  const pins = recipient.store.read(opened.reviewId).pins!;
+  const [excerpt] = parseWhiteboardFile(text).sources;
+
+  const side = excerpt!.commit === pins.head ? "head" : "base";
+
+  const read = await recipient.data.file(pins, side, excerpt!.file);
+
+  expect(
+    read.text
+      .split("\n")
+      .slice(
+        excerpt!.fromLine - 1,
+        excerpt!.fromLine - 1 + excerpt!.lines.length,
+      ),
+  ).toEqual(excerpt!.lines);
+
+  // A read-only copy does not stand in for one on a checkout.
+  expect(await open({ path: file })).toMatchObject({ stage: "error" });
 });
 
 it("opens a file on a checkout that holds every pinned commit", async () => {

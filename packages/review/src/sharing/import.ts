@@ -46,6 +46,7 @@ import {
   cloneSharedRepository,
   fetchPinnedRepository,
   fetchSharedCommits,
+  repositoryName,
   sharedGit,
 } from "./repository.js";
 
@@ -240,6 +241,20 @@ export interface ShareImport {
   /** A file is opened on a checkout the reader already has, never on a
    * clone: whoever wrote it chose its remote. */
   fromFile?: boolean;
+  /** A file opened without a checkout: its peeks read the lines the file
+   * carries, and its code cannot change. */
+  readOnly?: boolean;
+}
+
+/** A file needs a checkout of its repository that is not open in
+ * Whiteboard; `remote` is where to clone one from. */
+export class MissingCheckoutError extends ReviewInputError {
+  constructor(
+    message: string,
+    readonly remote?: string,
+  ) {
+    super(message, 409);
+  }
 }
 
 export const FRESH_IMPORT_VERSION = 0;
@@ -347,9 +362,11 @@ export async function importShare(
       409,
     );
 
+  if (input.readOnly && needed)
+    repositoryId = await readOnlyRepository(input, key, remote, bundle);
   // A document is filed on a checkout the receiver already has; it is not
   // worth a clone.
-  if (needed || (remote && store.checkoutsOfRemote(remote).length)) {
+  else if (needed || (remote && store.checkoutsOfRemote(remote).length)) {
     input.onStage?.("fetching");
     repositoryId = await shareRepository(
       input,
@@ -376,7 +393,8 @@ export async function importShare(
     ),
   );
 
-  if (pins && ranges.length) await data.validateSources(pins, ranges);
+  if (pins && ranges.length && !input.readOnly)
+    await data.validateSources(pins, ranges);
 
   // The copy's resources are its own: the sender's ids may be in this store.
   const ids = new Map(
@@ -488,11 +506,11 @@ async function shareRepository(
     repositoryId = await managedRepository(input, cloneUrl, pins, commits);
 
   if (!repositoryId)
-    throw new ReviewInputError(
+    throw new MissingCheckoutError(
       remote
         ? `Open a checkout of ${repositoryLabel(remote) ?? remote} in Whiteboard first, then open this file again.`
         : "Open a checkout of this whiteboard's repository in Whiteboard first, then open this file again.",
-      409,
+      remote,
     );
 
   // Only from the checkout's own origin, with its owner's credentials.
@@ -502,6 +520,32 @@ async function shareRepository(
 }
 
 const sharedRoot = () => path.join(devReviewHome(), "shared-repositories");
+
+/** A stand-in for the checkout of a file opened read-only: an empty folder
+ * named after the repository, and the lines the file carries. */
+async function readOnlyRepository(
+  { store }: ShareImport,
+  key: string,
+  remote: string | undefined,
+  bundle: ShareBundle,
+) {
+  const name = remote ? repositoryName(remote) : "whiteboard";
+
+  const root = path.join(
+    devReviewHome(),
+    "read-only",
+    key.slice(0, 16),
+    safeStorageSegment(name),
+  );
+
+  await mkdir(root, { recursive: true, mode: 0o700 });
+
+  const { id } = store.registerRepository(await realpath(root));
+
+  store.excerpts.put(id, bundle.sources);
+
+  return id;
+}
 
 /** Desktop's clone of a link's GitHub repository. */
 async function managedRepository(
