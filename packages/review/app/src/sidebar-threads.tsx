@@ -2,13 +2,14 @@ import { BoardIcon } from "@canvas/ui/board-icons";
 import { AgentLogo } from "@canvas/ui/brand-icons";
 import { buttonStyles } from "@canvas/ui/button";
 import { focusStyles } from "@canvas/ui/focus";
-import { PinIcon } from "@canvas/ui/icons";
+import { CheckIcon, PinIcon, RefreshIcon, TrashIcon } from "@canvas/ui/icons";
 import { listRowStyles } from "@canvas/ui/list-row";
 import { Spinner } from "@canvas/ui/spinner";
 import { StatusDot } from "@canvas/ui/status-dot";
 import { textStyles } from "@canvas/ui/text";
 import {
   type ReviewProjectThread,
+  type ReviewSidebarComment,
   type ReviewSidebarSectionProps,
   type ReviewThreadsFilter,
   boardTitle,
@@ -20,6 +21,7 @@ import { FolderLabel } from "./folder-label";
 import { countLabel, formatRelativeTime } from "./format";
 import { fontSize, fontWeight, leading, radius, space } from "./scale.stylex";
 import { tokens } from "./tokens.stylex";
+import { IconButton } from "./ui/button";
 import { SegmentedControl, segmentStyles } from "./ui/segmented";
 
 /** Whether a thread belongs to the board: it started on it, or edited it. */
@@ -76,12 +78,11 @@ function relation(thread: ReviewProjectThread, reviewId: string) {
 
 /** The Threads tab: the board's threads, the project's or every project's,
  * newest first; a row opens its thread in Ask. */
-export function ThreadsSectionBody({
-  reviewId,
-  threads,
-  onFilterThreads,
-  onOpenThread,
-}: ReviewSidebarSectionProps): ReactElement | null {
+export function ThreadsSectionBody(
+  props: ReviewSidebarSectionProps,
+): ReactElement | null {
+  const { reviewId, threads, onFilterThreads, onOpenThread } = props;
+
   if (!threads) return null;
 
   const onBoard = threads.list.filter((thread) =>
@@ -102,6 +103,7 @@ export function ThreadsSectionBody({
 
   return (
     <>
+      <CommentsGroup {...props} />
       <div {...stylex.props(styles.scope)}>
         <SegmentedControl
           label="Threads to list"
@@ -233,6 +235,117 @@ export function ThreadsSectionBody({
   );
 }
 
+/** Where a comment points, in a few words. */
+function commentPlace(comment: ReviewSidebarComment): string {
+  const { anchor } = comment;
+
+  if (anchor.kind === "source")
+    return `${anchor.file}:${anchor.fromLine === anchor.toLine ? anchor.fromLine : `${anchor.fromLine}–${anchor.toLine}`}${anchor.side === "base" ? " (base)" : ""}`;
+
+  return anchor.quote ? `“${anchor.quote}”` : "This whiteboard";
+}
+
+/** The board's own comments, above its threads: open ones first. A row
+ * shows what it points at; resolve or delete it beside. */
+function CommentsGroup({
+  comments,
+  onOpenComment,
+  onResolveComment,
+  onDeleteComment,
+}: ReviewSidebarSectionProps): ReactElement | null {
+  if (!comments?.length) return null;
+
+  const sorted = [...comments].sort(
+    (a, b) => Number(a.resolved) - Number(b.resolved),
+  );
+
+  const open = comments.filter((comment) => !comment.resolved).length;
+
+  return (
+    <section aria-label="Comments" {...stylex.props(styles.comments)}>
+      <h3 {...stylex.props(styles.heading)}>
+        Comments
+        <span {...stylex.props(styles.status)}>
+          {open === comments.length
+            ? open
+            : `${open} open of ${comments.length}`}
+        </span>
+      </h3>
+      <ul {...stylex.props(styles.list)}>
+        {sorted.map((comment) => (
+          <li
+            key={comment.id}
+            {...stylex.props(
+              styles.comment,
+              comment.parentId !== undefined && styles.reply,
+            )}
+          >
+            <button
+              type="button"
+              {...stylex.props(
+                focusStyles.ringInset,
+                buttonStyles.reset,
+                listRowStyles.wash,
+                styles.row,
+                styles.commentRow,
+              )}
+              onClick={() => onOpenComment?.(comment.id)}
+            >
+              <span {...stylex.props(styles.line)}>
+                <span {...stylex.props(styles.agent)}>{comment.author}</span>
+                {comment.resolved ? (
+                  <span {...stylex.props(styles.status)}>Resolved</span>
+                ) : null}
+                <span {...stylex.props(styles.spacer)} />
+                <span {...stylex.props(styles.status)}>
+                  {formatRelativeTime(comment.updatedAt, Date.now(), {
+                    short: true,
+                  })}
+                </span>
+              </span>
+              <span
+                {...stylex.props(
+                  styles.body,
+                  comment.resolved && styles.bodyResolved,
+                )}
+              >
+                {comment.body}
+              </span>
+              <span {...stylex.props(textStyles.truncate, styles.relationText)}>
+                {commentPlace(comment)}
+              </span>
+            </button>
+            <span {...stylex.props(styles.commentActions)}>
+              <IconButton
+                size="small"
+                aria-label={
+                  comment.resolved ? "Reopen comment" : "Resolve comment"
+                }
+                onClick={() =>
+                  onResolveComment?.(comment.id, !comment.resolved)
+                }
+              >
+                {comment.resolved ? (
+                  <RefreshIcon xstyle={styles.actionIcon} />
+                ) : (
+                  <CheckIcon xstyle={styles.actionIcon} />
+                )}
+              </IconButton>
+              <IconButton
+                size="small"
+                aria-label="Delete comment"
+                onClick={() => onDeleteComment?.(comment.id)}
+              >
+                <TrashIcon xstyle={styles.actionIcon} />
+              </IconButton>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Whether a thread's agent is answering now. */
 export function threadAnswering(thread: ReviewProjectThread): boolean {
   return thread.status === "running" || thread.status === "starting";
@@ -357,4 +470,47 @@ const styles = stylex.create({
   },
   kind: { width: "12px", height: "12px", color: tokens.inkFaint },
   pin: { width: "11px", height: "11px", color: tokens.inkFaint },
+  comments: {
+    paddingTop: space.s4,
+  },
+  heading: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: space.s6,
+    margin: 0,
+    paddingBlock: space.s4,
+    paddingInline: space.s14,
+    color: tokens.ink,
+    fontFamily: tokens.chromeFont,
+    fontSize: fontSize.body,
+    fontWeight: fontWeight.medium,
+    lineHeight: leading.px16,
+  },
+  comment: {
+    position: "relative",
+    display: "flex",
+    alignItems: "flex-start",
+  },
+  reply: { paddingInlineStart: space.s14 },
+  commentRow: { flex: "1 1 0" },
+  commentActions: {
+    display: "flex",
+    flexShrink: 0,
+    gap: space.s2,
+    paddingTop: space.s6,
+  },
+  actionIcon: { width: "12px", height: "12px" },
+  body: {
+    display: "-webkit-box",
+    overflow: "hidden",
+    WebkitBoxOrient: "vertical",
+    WebkitLineClamp: 3,
+    color: tokens.ink,
+    fontFamily: tokens.chromeFont,
+    fontSize: fontSize.body,
+    lineHeight: leading.px18,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  },
+  bodyResolved: { color: tokens.inkMuted },
 });

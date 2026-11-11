@@ -31,7 +31,9 @@ import { reconnectUntilAborted } from "../../../common/reviewReconnect.js";
 import { REVIEW_SIDEBAR_MINIMUM_WIDTH, TAB_COUNT_DIGITS, measuredOnce, sidebarMinimumWidth, tabsRowWidth } from "./reviewSidebarWidth.js";
 import type {
 	ReviewAskState,
+	ReviewCommentsUpdate,
 	ReviewProjectThreads,
+	ReviewSidebarComment,
 	ReviewThreadsFilter,
 	ReviewSidebarLenses,
 	ReviewSidebarSectionHandle,
@@ -180,6 +182,8 @@ export class ReviewSidebarPart extends Part {
 	private threadsFilter: ReviewThreadsFilter;
 	/** Each board's project threads, as the server last sent them. */
 	private readonly threads = new Map<string, ReviewProjectThreads>();
+	/** Each board's comments, as the server last sent them. */
+	private readonly comments = new Map<string, readonly ReviewSidebarComment[]>();
 	/** The thread each board's Ask shows. */
 	private readonly askThreads = new Map<string, readonly string[]>();
 	private readonly following = this._register(new MutableDisposable());
@@ -555,29 +559,58 @@ export class ReviewSidebarPart extends Part {
 		if (!reviewId) return;
 		const abort = new AbortController();
 		this.following.value = toDisposable(() => abort.abort());
-		const accept = (update: ReviewProjectThreads) => {
+		this.stream(reviewId, "ask/threads", abort.signal, (update: ReviewProjectThreads) => {
 			this.threads.set(reviewId, update);
 			if (reviewId === this.reviewId) this.render();
-		};
-		void reconnectUntilAborted(abort.signal, async (onConnected) => {
+		});
+		this.stream(reviewId, "comments", abort.signal, (update: ReviewCommentsUpdate) => {
+			this.comments.set(reviewId, update.comments);
+			if (reviewId === this.reviewId) this.render();
+		});
+	}
+
+	/** Reads a board's `?watch` route, one JSON line per update, until
+	 * aborted. */
+	private stream<T>(reviewId: string, route: string, signal: AbortSignal, accept: (update: T) => void): void {
+		void reconnectUntilAborted(signal, async (onConnected) => {
 			const client = new ReviewApiClient(await this.connection.getConnection());
-			const response = await client.response(`/${encodeURIComponent(reviewId)}/ask/threads?watch`, { signal: abort.signal });
+			const response = await client.response(`/${encodeURIComponent(reviewId)}/${route}?watch`, { signal });
 			onConnected();
 			const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
 			let pending = "";
 			for (let read = await reader.read(); !read.done; read = await reader.read()) {
 				pending += read.value;
 				for (let end = pending.indexOf("\n"); end !== -1; end = pending.indexOf("\n")) {
-					// SAFETY: the server sends ReviewProjectThreads lines on this route.
-					accept(JSON.parse(pending.slice(0, end)) as ReviewProjectThreads);
+					// SAFETY: the server sends T lines on this route.
+					accept(JSON.parse(pending.slice(0, end)) as T);
 					pending = pending.slice(end + 1);
 				}
 			}
-			if (abort.signal.aborted) return;
-			throw new Error("The threads stream ended.");
+			if (signal.aborted) return;
+			throw new Error(`The ${route} stream ended.`);
 		}, {
-			onRetry: (error) => this.logService.warn("[Whiteboard] Sidebar threads disconnected:", error),
+			onRetry: (error) => this.logService.warn(`[Whiteboard] Sidebar ${route} disconnected:`, error),
 		});
+	}
+
+	/** Shows what a comment points at: its block, or its file in Diff. */
+	private openComment(reviewId: string, commentId: string): void {
+		const comment = this.comments.get(reviewId)?.find((each) => each.id === commentId);
+		if (!comment) return;
+		const { anchor } = comment;
+		if (anchor.kind === "source") this.emitSurfaceEvent({ event: "revealDiffFile", reviewId, path: anchor.file });
+		else if (anchor.blockId) this.emitSurfaceEvent({ event: "revealBlock", reviewId, blockId: anchor.blockId });
+		else this.emitSurfaceEvent({ event: "showReviewView", view: "review", reviewId });
+	}
+
+	/** Resolves, reopens or deletes a comment; the stream shows the result. */
+	private changeComment(reviewId: string, commentId: string, change: { resolved: boolean } | "delete"): void {
+		void (async () => {
+			const client = new ReviewApiClient(await this.connection.getConnection());
+			await client.response(`/${encodeURIComponent(reviewId)}/comments/${encodeURIComponent(commentId)}`, change === "delete"
+				? { method: "DELETE" }
+				: { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(change) });
+		})().catch((error) => this.logService.warn("[Whiteboard] Comment change failed:", error));
 	}
 
 	/** What the board's Diff view reports for Lenses. */
@@ -658,7 +691,7 @@ export class ReviewSidebarPart extends Part {
 		const counts: Record<ReviewSidebarPaneId, number | undefined> = {
 			whiteboard: undefined,
 			diff: this.state.files?.count,
-			threads: boardThreads.length || undefined,
+			threads: (boardThreads.length + (reviewId ? (this.comments.get(reviewId) ?? []).filter((comment) => !comment.resolved && !comment.parentId).length : 0)) || undefined,
 		};
 		let recounted = false;
 		for (const pane of this.panes) {
@@ -762,6 +795,10 @@ export class ReviewSidebarPart extends Part {
 			},
 			onFilterThreads: (filter) => this.setThreadsFilter(filter),
 			onOpenThread: (threadId) => this.emitSurfaceEvent({ event: "openAskThread", reviewId, threadId }),
+			comments: this.comments.get(reviewId) ?? [],
+			onOpenComment: (commentId) => this.openComment(reviewId, commentId),
+			onResolveComment: (commentId, resolved) => this.changeComment(reviewId, commentId, { resolved }),
+			onDeleteComment: (commentId) => this.changeComment(reviewId, commentId, "delete"),
 			...(this.state.commits?.length && {
 				commits: {
 					list: this.state.commits,

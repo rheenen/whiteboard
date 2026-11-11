@@ -78,6 +78,7 @@ import {
 } from "./animation-render.js";
 import type { AskRecord } from "./ask-history.js";
 import { authoringTools } from "./authoring-tools.js";
+import { commentAnchor, commentAuthor } from "./comment-anchor.js";
 import { documentText } from "./document-text.js";
 import { instructionsQuerySchema, renderInstructions } from "./instructions.js";
 import type { LocalReviewData } from "./local-data.js";
@@ -93,6 +94,7 @@ import {
   type ReviewRequestVia,
   reviewRequestOrigin,
 } from "./request-origin.js";
+import { COMMENT_BODY_LIMIT } from "./review-comments.js";
 import {
   legacyModeSchema,
   progressUpdateSchema,
@@ -1243,6 +1245,107 @@ export function createReviewApi(
       "",
     ].join("\n");
   }
+
+  const commentInputSchema = z.strictObject({
+    selection: AgentSelectionSchema,
+    body: z.string().trim().min(1).max(COMMENT_BODY_LIMIT),
+    parentId: z.string().max(200).optional(),
+  });
+
+  const commentChangeSchema = z
+    .strictObject({
+      body: z.string().trim().min(1).max(COMMENT_BODY_LIMIT).optional(),
+      resolved: z.boolean().optional(),
+    })
+    .refine(
+      (change) => change.body !== undefined || change.resolved !== undefined,
+      "Nothing to change.",
+    );
+
+  /** The reviewer's comments on a board, for the sidebar and PR tools. */
+  app.get("/:id/comments", (context) => {
+    const reviewId = context.req.param("id");
+
+    readReview(reviewId);
+
+    const read = () => ({ reviewId, comments: store.comments.list(reviewId) });
+
+    if (context.req.query("watch") !== undefined) {
+      // Sent again only when it reads differently.
+      let sent = "";
+
+      return watch(
+        () => {
+          const line = JSON.stringify(read());
+
+          if (line === sent) return [];
+          sent = line;
+
+          return [line];
+        },
+        (notify) => store.comments.subscribe(notify),
+      );
+    }
+
+    return context.json(read());
+  });
+
+  app.post("/:id/comments", writable, async (context) => {
+    const reviewId = context.req.param("id");
+
+    const input = commentInputSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    if (
+      input.selection.apiSource &&
+      input.selection.apiSource.reviewId !== reviewId
+    )
+      throw new ReviewInputError("Selection belongs to another review.");
+
+    const snapshot = readReview(reviewId, input.selection.apiSource?.version);
+
+    const comment = store.comments.add({
+      reviewId,
+      body: input.body,
+      author: await commentAuthor(store, snapshot),
+      anchor: await commentAnchor(store, data, snapshot, input.selection),
+      title: input.selection.title,
+      selection: input.selection,
+      version: snapshot.version,
+      ...(input.parentId && { parentId: input.parentId }),
+    });
+
+    return context.json(comment);
+  });
+
+  app.patch("/:id/comments/:commentId", writable, async (context) => {
+    const change = commentChangeSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    const comment = store.comments.update(
+      context.req.param("id"),
+      context.req.param("commentId"),
+      change,
+    );
+
+    if (!comment) throw new ReviewInputError("Comment not found.", 404);
+
+    return context.json(comment);
+  });
+
+  app.delete("/:id/comments/:commentId", writable, (context) => {
+    if (
+      !store.comments.delete(
+        context.req.param("id"),
+        context.req.param("commentId"),
+      )
+    )
+      throw new ReviewInputError("Comment not found.", 404);
+
+    return context.json({ ok: true });
+  });
 
   if (ask && data) {
     const projectOf = (reviewId: string) =>

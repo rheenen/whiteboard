@@ -566,6 +566,33 @@ export interface ReviewProjectThreads {
   threads: ReviewProjectThread[];
 }
 
+/** A reviewer's comment, as the Threads tab lists it. */
+export interface ReviewSidebarComment {
+  id: string;
+  /** Markdown. */
+  body: string;
+  author: string;
+  updatedAt: string;
+  resolved: boolean;
+  parentId?: string;
+  /** Where it points: a file's lines, or a block of the whiteboard. */
+  anchor:
+    | {
+        kind: "source";
+        file: string;
+        side: "head" | "base";
+        fromLine: number;
+        toLine: number;
+      }
+    | { kind: "document"; blockId?: string; quote?: string };
+}
+
+/** GET /:id/comments?watch: the board's comments, oldest first. */
+export interface ReviewCommentsUpdate {
+  reviewId: string;
+  comments: ReviewSidebarComment[];
+}
+
 /** Which threads the Threads tab lists: those on this board (started on it,
  * or that edited it), the board's project's, or every project's. */
 export type ReviewThreadsFilter = "board" | "project" | "all";
@@ -610,6 +637,12 @@ export interface ReviewSidebarSectionProps {
     open?: readonly string[];
   };
   onFilterThreads?(filter: ReviewThreadsFilter): void;
+  /** Threads: the board's own comments, beside its threads. */
+  comments?: readonly ReviewSidebarComment[];
+  /** Show the block or file a comment points at. */
+  onOpenComment?(commentId: string): void;
+  onResolveComment?(commentId: string, resolved: boolean): void;
+  onDeleteComment?(commentId: string): void;
   /** The commit picker: the board's commits, and the one the Diff view
    * is filtered to. */
   commits?: {
@@ -2190,6 +2223,13 @@ export const ReviewSurfaceEventSchema = z.discriminatedUnion("event", [
     reviewId: requiredString,
     branch: requiredString,
     active: z.boolean(),
+  }),
+  /** Show a changed file in the board's Diff view, from a comment in the
+   * sidebar's Threads. */
+  z.strictObject({
+    event: z.literal("revealDiffFile"),
+    reviewId: requiredString,
+    path: requiredString,
   }),
   /** Open a saved thread in Ask, from the sidebar's Threads. */
   z.strictObject({

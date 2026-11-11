@@ -207,6 +207,13 @@ export function authoringTools(
       "/:reviewId/lenses",
     ),
     tool(
+      "comments_list",
+      "List the reviewer's comments on the whiteboard: each with its Markdown body, author, whether it is resolved, its parent for a reply, a hash that changes when the body or anchor changes, and its anchor. A source anchor names the repository remote, the file, the side (head or base), the 1-based lines and the full commit; a document anchor names a block and a quote. Read-only.",
+      z.strictObject(review),
+      "GET",
+      "/:reviewId/comments",
+    ),
+    tool(
       "history",
       "List saved document versions.",
       z.strictObject(review),

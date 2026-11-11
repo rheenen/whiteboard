@@ -2,6 +2,7 @@ import type {
   ReviewApiSummary,
   ReviewMenuRequest,
   ReviewProjectThread,
+  ReviewSidebarComment,
   ReviewSidebarSectionProps,
   ReviewThreadsFilter,
 } from "@dev.fast/review-protocol";
@@ -512,6 +513,82 @@ it("lists the board's threads, the project's, or every project's", async () => {
   );
   expect(onOpenThread).toHaveBeenCalledWith("pinned");
   await act(async () => handle!.dispose());
+});
+
+it("lists the board's comments above its threads, open ones first, and resolves or deletes one", async () => {
+  const comment = (
+    id: string,
+    resolved: boolean,
+    anchor: ReviewSidebarComment["anchor"],
+  ): ReviewSidebarComment => ({
+    id,
+    body: `Comment ${id}`,
+    author: "reviewer",
+    updatedAt: "2026-10-06T12:00:00Z",
+    resolved,
+    anchor,
+  });
+
+  const onOpenComment = vi.fn<(id: string) => void>();
+  const onResolveComment = vi.fn<(id: string, resolved: boolean) => void>();
+  const onDeleteComment = vi.fn<(id: string) => void>();
+
+  const { container, dispose } = await mount(
+    props({
+      section: "threads",
+      threads: { list: [], filter: "board" },
+      comments: [
+        comment("done", true, { kind: "document", blockId: "b1" }),
+        comment("open", false, {
+          kind: "source",
+          file: "src/audit.ts",
+          side: "head",
+          fromLine: 3,
+          toLine: 5,
+        }),
+      ],
+      onOpenComment,
+      onResolveComment,
+      onDeleteComment,
+    }),
+  );
+
+  const section = container.querySelector<HTMLElement>(
+    "section[aria-label=Comments]",
+  )!;
+
+  expect(section.querySelector("h3")?.textContent).toBe("Comments1 open of 2");
+
+  const rows = [...section.querySelectorAll("li")];
+
+  expect(rows[0]?.textContent).toContain("Comment open");
+  expect(rows[0]?.textContent).toContain("src/audit.ts:3–5");
+  expect(rows[1]?.textContent).toContain("Resolved");
+
+  await act(async () => rows[0]!.querySelector("button")!.click());
+  expect(onOpenComment).toHaveBeenCalledWith("open");
+
+  await act(async () =>
+    rows[0]!
+      .querySelector<HTMLElement>("[aria-label='Resolve comment']")!
+      .click(),
+  );
+  expect(onResolveComment).toHaveBeenCalledWith("open", true);
+
+  await act(async () =>
+    rows[1]!
+      .querySelector<HTMLElement>("[aria-label='Reopen comment']")!
+      .click(),
+  );
+  expect(onResolveComment).toHaveBeenCalledWith("done", false);
+
+  await act(async () =>
+    rows[1]!
+      .querySelector<HTMLElement>("[aria-label='Delete comment']")!
+      .click(),
+  );
+  expect(onDeleteComment).toHaveBeenCalledWith("done");
+  await dispose();
 });
 
 const mountContents = async (entries: ReviewTocEntry[]) => {

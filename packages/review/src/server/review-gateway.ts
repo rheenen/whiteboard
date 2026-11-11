@@ -102,6 +102,10 @@ const REMOTE_ROUTES: readonly RemoteRoute[] = [
     path: "ask/:thread/:action{prompt|permission|files|retry|cancel|close|viewed}",
   },
   { method: "DELETE", path: "ask/:thread" },
+  { method: "GET", path: "comments" },
+  { method: "POST", path: "comments", slow: true },
+  { method: "PATCH", path: "comments/:comment" },
+  { method: "DELETE", path: "comments/:comment" },
 ];
 
 const SLOW_ROUTE_TIMEOUT_MS = 120_000;

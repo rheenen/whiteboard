@@ -86,6 +86,7 @@ import {
   setPullRequest,
   sourceBranchName,
 } from "./origin.js";
+import { ReviewComments } from "./review-comments.js";
 import { upgradeStore } from "./store-migrations.js";
 import {
   BOARD_REPOSITORY_ID_SQL,
@@ -523,6 +524,7 @@ export interface ReviewProviders {
 export class ReviewStore {
   readonly activity: ReviewActivity;
   readonly askHistory: AskHistory;
+  readonly comments: ReviewComments;
   private readonly db: DatabaseSync;
   private pending: Promise<unknown> = Promise.resolve();
   private readonly preparing = new Set<Promise<unknown>>();
@@ -798,6 +800,9 @@ export class ReviewStore {
       this.assertWritable(id),
     );
     this.askHistory = new AskHistory(this.db, (id) =>
+      this.assertOutOfTrash(id),
+    );
+    this.comments = new ReviewComments(this.db, (id) =>
       this.assertOutOfTrash(id),
     );
 
@@ -1334,6 +1339,7 @@ export class ReviewStore {
     ])
       this.db.prepare(`DELETE FROM ${table} WHERE review_id=?`).run(id);
     this.askHistory.removeReview(id);
+    this.comments.removeReview(id);
     // Its children move up to top level, its dependencies and the links
     // on it go, by the schema's foreign keys. Links into it stay, and the
     // tombstone shows it as deleted, in the project it was in.

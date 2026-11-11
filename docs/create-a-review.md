@@ -23,6 +23,28 @@ or code link to open its source.
 
 ![A sequence diagram beside the source code for its selected step](assets/diagram-to-code.webp)
 
+## Comment on the review
+
+Select a passage of the whiteboard or lines of code, then choose **Add
+comment**. The **Threads** tab lists the board's comments above its Ask
+threads. Select a comment to show what it points at, or resolve or delete it
+beside.
+
+A tool that posts pull request comments can read them without a running
+server:
+
+```sh
+whiteboard comments --review <id> --json
+```
+
+The output is `{"schema": 1, "reviewId", "sessionId", "comments": [...]}`. Each
+comment has a Markdown `body`, its `author`, `resolved`, a `hash` that changes
+when the body or anchor changes, and an `anchor`. A source anchor names the
+repository remote, the `file`, the `side` (`head` or `base`), 1-based
+`fromLine` and `toLine`, and the full `commit`; a document anchor names a
+`blockId` and a `quote`. The `session_comments_list` MCP tool returns the same
+comments.
+
 ## Plan and review a stack
 
 When your agent plans work in Whiteboard, it keeps the plan and its changes

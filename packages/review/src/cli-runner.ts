@@ -1244,6 +1244,34 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       },
     );
 
+  configureJsonOutput(
+    program
+      .command("comments")
+      .description(
+        "Print a review's comments from its saved state; works without a running server",
+      ),
+    "plain",
+  )
+    .option("--review <id>", "review ID")
+    .option("--session <id>", "review ID, as MCP tools name it")
+    .action(
+      async (options: {
+        review?: string;
+        session?: string;
+        json?: boolean;
+      }) => {
+        const { runCommentsCli } = await import("./review-api/comments-cli.js");
+
+        state.exitCode = runCommentsCli({
+          ...options,
+          json: options.json ?? program.opts<{ json?: boolean }>().json,
+          stdout: input.stdout,
+          stderr: input.stderr,
+          env: authoringEnv(),
+        });
+      },
+    );
+
   // Hosted trace store login. Logging in authenticates a user; it selects
   // no storage by itself.
   configureJsonOutput(

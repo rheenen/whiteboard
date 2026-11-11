@@ -518,6 +518,12 @@ function ReviewLayoutContent({
         return;
       }
 
+      if (event.event === "revealDiffFile") {
+        panelStore.getState().revealDiffFile(event.path);
+
+        return;
+      }
+
       if (event.event === "pickCommit") {
         panelStore
           .getState()
