@@ -10,6 +10,8 @@ import { useEffect } from "react";
 import { canvasQueryKeys } from "./canvas-query";
 
 export interface SharingAccount {
+  /** The installation turned sharing off: no Share, no sign-in. */
+  disabled?: true;
   account: {
     login: string;
     origin: string;
@@ -23,6 +25,12 @@ export interface SharingAccount {
 
 const POLL_WHILE_PENDING_MS = 2000;
 
+/** A disabled host answers only `{disabled: true}`. */
+const readAccount = (
+  body: SharingAccount | { disabled: true },
+): SharingAccount =>
+  "account" in body ? body : { disabled: true, account: null, pending: false };
+
 export function useSharingAccount(
   client: ReviewApiClient | undefined,
   enabled = true,
@@ -30,7 +38,13 @@ export function useSharingAccount(
   const query = useQuery({
     queryKey: canvasQueryKeys.sharingAccount(),
     queryFn: client
-      ? ({ signal }) => client.read<SharingAccount>("/sharing/account", signal)
+      ? async ({ signal }) =>
+          readAccount(
+            await client.read<SharingAccount | { disabled: true }>(
+              "/sharing/account",
+              signal,
+            ),
+          )
       : skipToken,
     enabled,
     refetchInterval: (query) =>
@@ -76,7 +90,13 @@ export function useSignOut(client: ReviewApiClient | undefined) {
   const key = canvasQueryKeys.sharingAccount();
 
   return useMutation({
-    mutationFn: () => client!.post<SharingAccount>("/sharing/logout", {}),
+    mutationFn: async () =>
+      readAccount(
+        await client!.post<SharingAccount | { disabled: true }>(
+          "/sharing/logout",
+          {},
+        ),
+      ),
     onSuccess: async (account) => {
       await queryClient.cancelQueries({ queryKey: key });
       queryClient.setQueryData(key, account);

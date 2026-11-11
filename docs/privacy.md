@@ -53,6 +53,28 @@ nothing. Whiteboard Desktop opens such a file on a checkout of its repository
 that you already have, and never clones one for it.
 `whiteboard share revoke <share-id>` stops future downloads.
 
+### Turning sharing off
+
+An installation can turn sharing off in any of these ways:
+
+- set `DEV_REVIEW_SHARING_DISABLED=1` in the environment of the Whiteboard
+  server and CLI;
+- put a `sharing-policy.json` file that holds `{"sharing": "disabled"}` next to
+  the runtime's `package.json`. In a system install, make it root-owned;
+- in Desktop, turn off the `review.sharing.enabled` setting, or set the
+  `WhiteboardSharingEnabled` policy to false.
+
+Off always wins: no source can turn sharing on again while another one turns it
+off. A policy file that Whiteboard cannot read or parse also turns sharing off.
+
+With sharing off, Whiteboard sends nothing to the share service or the hosted
+trace store. It does not sign in, upload or revoke a whiteboard, open share
+links, or capture traces to the hosted store. `whiteboard share`,
+`whiteboard share revoke`, `whiteboard login` and `whiteboard whoami` exit with
+status 2, and Desktop hides the Share button and the sign-in in Settings.
+`whiteboard export`, opening `.whiteboard` files and `whiteboard logout` still
+work.
+
 ## Hosted trace store
 
 Trace capture is off by default and needs your consent for each repository.

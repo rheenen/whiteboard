@@ -15,7 +15,14 @@ import {
 import type { Snapshot } from "@review/review-api/store";
 import * as stylex from "@stylexjs/stylex";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { type ApiDocumentData, createDocumentLoader } from "./api-document";
 import { SaveMarkdown } from "./blocks";
@@ -37,6 +44,7 @@ import type { ReviewTocEntry } from "./review-document-headings";
 import type { ReviewFindHost } from "./review-find";
 import { useReviewStack } from "./review-stack-selector";
 import { SharingContext } from "./share-control";
+import { useSharingAccount } from "./sharing-account";
 import { tokens } from "./tokens.stylex";
 import { Button } from "./ui/button";
 import {
@@ -488,7 +496,7 @@ export function ApiCanvas({
     <div {...stylex.props(styles.canvasSurface)}>
       <CanvasQueryProvider scope={queries}>
         <SharedCanvasQueryClient.Provider value={queries.queryClient}>
-          <SharingContext.Provider value={sharing}>
+          <SharingProvider value={sharing}>
             <ConnectionContext.Provider value={connection}>
               <SaveMarkdown.Provider value={saveMarkdown}>
                 <BoardPaintedContext.Provider value={painted}>
@@ -519,7 +527,7 @@ export function ApiCanvas({
                 </BoardPaintedContext.Provider>
               </SaveMarkdown.Provider>
             </ConnectionContext.Provider>
-          </SharingContext.Provider>
+          </SharingProvider>
         </SharedCanvasQueryClient.Provider>
       </CanvasQueryProvider>
     </div>
@@ -527,6 +535,24 @@ export function ApiCanvas({
 }
 
 /** Drops a board's snapshot once no stream keeps it current. */
+/** Withholds sharing when the installation turned it off. */
+function SharingProvider({
+  value,
+  children,
+}: {
+  value: ComponentProps<typeof SharingContext.Provider>["value"];
+  children: ReactNode;
+}) {
+  const disabled =
+    useSharingAccount(value?.client, value !== null).data?.disabled === true;
+
+  return (
+    <SharingContext.Provider value={disabled ? null : value}>
+      {children}
+    </SharingContext.Provider>
+  );
+}
+
 function unfollowed(queryClient: QueryClient, reviewId: string) {
   queryClient.removeQueries({
     queryKey: canvasQueryKeys.board(reviewId, undefined),

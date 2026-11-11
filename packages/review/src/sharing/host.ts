@@ -25,6 +25,7 @@ import { z } from "zod";
 
 import { readSharingAuth } from "./auth.js";
 import { ShareAuthError, ShareClient, ShareRequestError } from "./client.js";
+import { SHARING_DISABLED, isSharingDisabled } from "./disabled.js";
 import { exportShare, validateShareSources } from "./export.js";
 import {
   parseWhiteboardFile,
@@ -77,6 +78,16 @@ interface SharingHostOptions extends SharingHostEvents {
   openUrl?: typeof openUrlInBrowser;
   fetch?: typeof fetch;
   remoteShare?: RemoteShare;
+  /** Asked on every request; the installation's policy by default. */
+  sharingDisabled?: () => boolean;
+}
+
+/** Throws when this installation turned sharing off. */
+function assertSharingEnabled(
+  options: Pick<SharingHostOptions, "sharingDisabled">,
+) {
+  if ((options.sharingDisabled ?? isSharingDisabled)())
+    throw new ReviewInputError(SHARING_DISABLED, 403);
 }
 
 const importSchema = z.union([
@@ -136,15 +147,26 @@ export function mountSharingHost(
     };
   };
 
+  // Disabled, it reads no account and warms no connection.
   app.get("/sharing/account", async (context) =>
-    context.json(await readAccount()),
+    context.json(
+      (options.sharingDisabled ?? isSharingDisabled)()
+        ? { disabled: true }
+        : await readAccount(),
+    ),
   );
   app.post("/sharing/logout", async (context) => {
     await clearStoreAuth();
 
-    return context.json(await readAccount());
+    return context.json(
+      (options.sharingDisabled ?? isSharingDisabled)()
+        ? { disabled: true }
+        : await readAccount(),
+    );
   });
   app.post("/sharing/login", async (context) => {
+    assertSharingEnabled(options);
+
     if (!login.pending) {
       login = { pending: true };
       options.onLogin?.("started");
@@ -299,6 +321,8 @@ export function mountSharingHost(
       );
     }
 
+    assertSharingEnabled(options);
+
     const parsed = parseShareLink(input.url);
     const account = await readStoreAuth();
 
@@ -413,7 +437,12 @@ export function mountSharingPublisher(
   data: LocalReviewData,
   options: Pick<
     SharingHostOptions,
-    "readRepository" | "fetch" | "onPublished" | "onRevoked" | "remoteShare"
+    | "readRepository"
+    | "fetch"
+    | "onPublished"
+    | "onRevoked"
+    | "remoteShare"
+    | "sharingDisabled"
   > = {},
 ) {
   const prepareLocal = async (
@@ -488,6 +517,8 @@ export function mountSharingPublisher(
     });
   });
   app.post("/sharing/publish", async (context) => {
+    assertSharingEnabled(options);
+
     const input = publishSchema.parse(
       await readBoundedRequestJson(context.req.raw),
     );
@@ -561,6 +592,8 @@ export function mountSharingPublisher(
     }
   });
   app.post("/sharing/revoke", async (context) => {
+    assertSharingEnabled(options);
+
     const { shareId } = z
       .strictObject({ shareId: shareIdSchema })
       .parse(await readBoundedRequestJson(context.req.raw));

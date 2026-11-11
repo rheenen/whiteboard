@@ -11,7 +11,13 @@ export {
   writeStoreAuth,
 } from "./store-auth";
 
-export { StoreApiError, StoreClient } from "./store-client";
+export {
+  HostedStoreDisabledError,
+  hostedStoreDisabled,
+  SHARING_DISABLED_ENV,
+  StoreApiError,
+  StoreClient,
+} from "./store-client";
 
 export {
   DEFAULT_TRACE_SESSIONS_LIMIT,

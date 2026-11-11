@@ -3,6 +3,7 @@ import { storeRoutes } from "@dev.fast/trace-protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  HostedStoreDisabledError,
   STORE_UPGRADE_REQUIRED_MESSAGE,
   StoreApiError,
   StoreClient,
@@ -16,6 +17,31 @@ function jsonResponse(body: JsonValue, status = 200) {
 }
 
 describe("StoreClient", () => {
+  it("sends nothing once the installation turns sharing off", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => jsonResponse({}));
+    const env: NodeJS.ProcessEnv = {};
+
+    const client = new StoreClient({
+      origin: "https://app.dev.fast",
+      token: "tok",
+      fetch,
+      env,
+    });
+
+    env.DEV_REVIEW_SHARING_DISABLED = "1";
+
+    await expect(client.session()).rejects.toBeInstanceOf(
+      HostedStoreDisabledError,
+    );
+    await expect(client.deviceToken("code")).rejects.toBeInstanceOf(
+      HostedStoreDisabledError,
+    );
+    await expect(
+      client.createStore({ owner: "a", name: "b" }),
+    ).rejects.toBeInstanceOf(HostedStoreDisabledError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("sends the bearer token and parses the envelope on error", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(
       async () =>

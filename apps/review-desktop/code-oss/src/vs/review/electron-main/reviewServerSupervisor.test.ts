@@ -44,6 +44,25 @@ test('the trusted product version overrides inherited environment values', () =>
 	assert.equal(environment.DEV_FAST_REVIEW_TELEMETRY_DISABLED, undefined);
 });
 
+test('the sharing setting turns sharing off, and turning it on keeps an off from the shell', () => {
+	const options = {
+		applicationEnvironment: {},
+		appVersion: '0.0.16',
+		serverEntry: '/review/server.js',
+		port: 4321,
+		token: 'token',
+		instanceId: 'instance',
+		appPid: 1234,
+		telemetryEnabled: true,
+		appSessionId: 'session',
+		channel: 'stable',
+	} as const;
+
+	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: false }).DEV_REVIEW_SHARING_DISABLED, '1');
+	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: true }).DEV_REVIEW_SHARING_DISABLED, undefined);
+	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: { DEV_REVIEW_SHARING_DISABLED: '1' }, sharingEnabled: true }).DEV_REVIEW_SHARING_DISABLED, '1');
+});
+
 for (const protocol of ['dev-fast-review', 'dev-fast-review-preview']) {
 	test(`the app protocol overrides the shell protocol (${protocol})`, () => {
 		const environment = createReviewServerEnvironment({

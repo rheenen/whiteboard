@@ -52,6 +52,8 @@ function Account({ request }: Pick<ReviewCanvasSettingsContent, "request">) {
     (signIn.error ?? signOut.error)?.message ??
     (accountQuery.isError ? "Could not read sign-in status." : state?.error);
 
+  if (state?.disabled) return null;
+
   return (
     <Section label="Account" info={<PrivacyInfo />}>
       {!state ? null : signedIn ? (

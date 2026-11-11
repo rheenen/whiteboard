@@ -102,6 +102,7 @@ import {
   serverNotReady,
 } from "./server-discovery";
 import { aliasInstallationToAccount } from "./server/account-alias";
+import { isSharingDisabled, refuseDisabledSharing } from "./sharing/disabled";
 import { setTraceAttribute, span } from "./startup-trace";
 import type { ReviewTelemetrySurface } from "./telemetry-config";
 import {
@@ -1148,7 +1149,7 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     program
       .command("share")
       .description(
-        "Upload an immutable review snapshot and return its share link",
+        "Upload an immutable review snapshot and return its share link (exits 2 when sharing is disabled)",
       ),
     "plain",
   )
@@ -1167,6 +1168,14 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         preview?: boolean;
         json?: boolean;
       }) => {
+        const refused = refuseDisabledSharing({ ...input, ...options });
+
+        if (refused !== undefined) {
+          state.exitCode = refused;
+
+          return;
+        }
+
         const { runShareCli } = await import("./sharing/cli.js");
         state.exitCode = await runShareCli({
           ...input,
@@ -1182,6 +1191,14 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       .description("Revoke future downloads of a share"),
     "plain",
   ).action(async (shareId: string, options: { json?: boolean }) => {
+    const refused = refuseDisabledSharing({ ...input, ...options });
+
+    if (refused !== undefined) {
+      state.exitCode = refused;
+
+      return;
+    }
+
     const { runShareCli } = await import("./sharing/cli.js");
     state.exitCode = await runShareCli({
       ...input,
@@ -1223,7 +1240,11 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
   // Hosted trace store login. Logging in authenticates a user; it selects
   // no storage by itself.
   configureJsonOutput(
-    program.command("login").description("Log in to Whiteboard with GitHub"),
+    program
+      .command("login")
+      .description(
+        "Log in to Whiteboard with GitHub (exits 2 when sharing is disabled)",
+      ),
     "plain",
   )
     .option(
@@ -1239,6 +1260,14 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         traces?: boolean;
         json?: boolean;
       }) => {
+        const refused = refuseDisabledSharing({ ...input, ...options });
+
+        if (refused !== undefined) {
+          state.exitCode = refused;
+
+          return;
+        }
+
         state.exitCode = await runtime.runStoreLogin({
           origin: options.origin,
           noBrowser: options.browser === false,
@@ -1266,6 +1295,14 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     program.command("whoami").description("Show the hosted trace store login"),
     "plain",
   ).action(async (options: { json?: boolean }) => {
+    const refused = refuseDisabledSharing({ ...input, ...options });
+
+    if (refused !== undefined) {
+      state.exitCode = refused;
+
+      return;
+    }
+
     state.exitCode = await runtime.runStoreWhoami({
       json: options.json,
       stdout: input.stdout,
@@ -1467,6 +1504,8 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
           state.json ||
           input.stdin?.isTTY !== true ||
           input.argv[0] !== "trace" ||
+          // Signing in is part of sharing.
+          isSharingDisabled(undefined, input.env) ||
           input.argv.some((arg) => /hook/i.test(arg))
         )
           return undefined;

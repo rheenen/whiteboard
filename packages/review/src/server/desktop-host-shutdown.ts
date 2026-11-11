@@ -36,6 +36,7 @@ export function listenForDesktopHostShutdown(
   onTelemetrySetting?: (enabled: boolean) => void,
   onStageRustAnalyzer?: (path: string) => void,
   onRemoteHosts?: (hosts: ReviewGatewayHost[]) => void,
+  onSharingSetting?: (enabled: boolean) => void,
 ): () => void {
   const handleMessage = (message: JsonValue) => {
     if (!isJsonObject(message)) return;
@@ -51,6 +52,14 @@ export function listenForDesktopHostShutdown(
       const enabled = jsonBoolean(jsonProperty(message, "enabled"));
 
       if (enabled !== undefined) onTelemetrySetting?.(enabled);
+
+      return;
+    }
+
+    if (type === "sharing-setting") {
+      const enabled = jsonBoolean(jsonProperty(message, "enabled"));
+
+      if (enabled !== undefined) onSharingSetting?.(enabled);
 
       return;
     }

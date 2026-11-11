@@ -1513,6 +1513,8 @@ async function mountPeekReview(content: {
   available?: ReviewApiSummary["available"];
   /** The review's checkout is gone. */
   sourceUnavailable?: boolean;
+  /** The installation turned sharing off. */
+  sharingDisabled?: boolean;
 }) {
   const review = await command({
     type: "create",
@@ -1550,6 +1552,9 @@ async function mountPeekReview(content: {
     }),
   );
   let data: LocalReviewData | undefined;
+
+  if (content.sharingDisabled)
+    app.get("/reviews-api/sharing/account", (c) => c.json({ disabled: true }));
 
   // The store's refresh, which runs before each read with local data, finds
   // the checkout gone.
@@ -1731,6 +1736,21 @@ it.each([
     );
   },
 );
+
+it("hides the share control when the installation turned sharing off", async () => {
+  const { button, requested } = await mountPeekReview({
+    sharingDisabled: true,
+  });
+
+  await act(async () => {
+    await vi.waitFor(() =>
+      expect(requested).toContain("/reviews-api/sharing/account"),
+    );
+  });
+  await act(async () => {
+    await vi.waitFor(() => expect(button("Share review")).toBeUndefined());
+  });
+});
 
 it("hides the share control while the review's checkout is gone", async () => {
   const { button } = await mountPeekReview({ sourceUnavailable: true });

@@ -64,11 +64,33 @@ export class StoreApiError extends Error {
   }
 }
 
+/** Set to `1` or `true` by an installation that turned sharing off. The
+ * review runtime also sets it from its install policy file. */
+export const SHARING_DISABLED_ENV = "DEV_REVIEW_SHARING_DISABLED";
+
+/** Thrown before any request when the installation turned sharing off. */
+export class HostedStoreDisabledError extends Error {
+  constructor() {
+    super("Sharing is disabled on this installation");
+    this.name = "HostedStoreDisabledError";
+  }
+}
+
+/** Whether the environment turns the hosted store off. */
+export function hostedStoreDisabled(env: NodeJS.ProcessEnv = process.env) {
+  const flag = env[SHARING_DISABLED_ENV]?.trim().toLowerCase();
+
+  return flag === "1" || flag === "true";
+}
+
 export interface StoreClientOptions {
   origin: string;
   token?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** Read before every request, so a server that turns sharing off later
+   * stops at once; `process.env` by default. */
+  env?: NodeJS.ProcessEnv;
 }
 
 interface DeviceCodeResponse {
@@ -97,12 +119,19 @@ export class StoreClient {
   private token: string | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly env: NodeJS.ProcessEnv;
 
   constructor(options: StoreClientOptions) {
     this.origin = options.origin;
     this.token = options.token;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.env = options.env ?? process.env;
+  }
+
+  /** Every request to the hosted store passes here first. */
+  private assertEnabled(): void {
+    if (hostedStoreDisabled(this.env)) throw new HostedStoreDisabledError();
   }
 
   async listOwnUploads(
@@ -133,6 +162,7 @@ export class StoreClient {
   }
 
   async deviceToken(deviceCode: string): Promise<DeviceTokenResult> {
+    this.assertEnabled();
     const url = new URL(DEVICE_TOKEN_PATH, this.origin);
 
     const response = await this.fetchImpl(url.toString(), {
@@ -296,6 +326,7 @@ export class StoreClient {
     schema: z.ZodType<T> | undefined,
     query?: URLSearchParams,
   ): Promise<T> {
+    this.assertEnabled();
     const url = new URL(path, this.origin);
 
     if (query) {

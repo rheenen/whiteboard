@@ -36,6 +36,10 @@ async function runCli(effectivePath: string): Promise<number> {
     return 1;
   }
 
+  const { applySharingPolicy } = await import("./sharing/disabled.js");
+
+  applySharingPolicy();
+
   const { runReviewCli } = await import("./cli-runner.js");
 
   return runReviewCli({

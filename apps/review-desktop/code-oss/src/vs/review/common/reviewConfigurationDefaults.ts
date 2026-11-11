@@ -24,6 +24,7 @@
 
 export const REVIEW_KEYMAP_SETTING = 'review.keymap';
 export const REVIEW_TELEMETRY_SETTING = 'review.telemetry.enabled';
+export const REVIEW_SHARING_SETTING = 'review.sharing.enabled';
 /** Unregistered: settings.json only. */
 export const REVIEW_SERVICE_URL_SETTING = 'review.serviceUrl';
 export const REVIEW_SOFTWARE_MAP_SETTING = 'review.experimental.softwareMap.enabled';
@@ -62,6 +63,7 @@ export const reviewConfigurationDefaults = {
 	[REVIEW_REMOTE_HOSTS_SETTING]: [],
 	[REVIEW_REMOTE_INSTALL_SETTING]: 'ask',
 	[REVIEW_TELEMETRY_SETTING]: true,
+	[REVIEW_SHARING_SETTING]: true,
 	'telemetry.telemetryLevel': 'off',
 	'telemetry.enableTelemetry': false,
 	'telemetry.enableCrashReporter': false,

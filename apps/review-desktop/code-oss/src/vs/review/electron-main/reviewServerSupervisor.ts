@@ -82,6 +82,8 @@ export interface ReviewServerSupervisorOptions {
   readonly logError: (message: string) => void;
   readonly createProcess: () => IReviewServerProcess;
   readonly telemetryEnabled?: boolean;
+  /** The `review.sharing.enabled` setting; off sets DEV_REVIEW_SHARING_DISABLED. */
+  readonly sharingEnabled?: boolean;
   readonly serviceOrigin?: string;
   readonly userExtensionsPath?: string;
   /** Electron's Review crash dump directory; the server uploads only from it. */
@@ -106,6 +108,7 @@ export function createReviewServerEnvironment(options: {
   readonly instanceId: string;
   readonly appPid: number;
   readonly telemetryEnabled: boolean;
+  readonly sharingEnabled?: boolean;
   readonly serviceOrigin?: string;
   readonly rustAnalyzerSource?: string;
   readonly appSessionId: string;
@@ -129,6 +132,10 @@ export function createReviewServerEnvironment(options: {
     DEV_FAST_REVIEW_TELEMETRY_DISABLED: options.telemetryEnabled
       ? undefined
       : "1",
+    // Off always wins: on leaves an off from the shell in place.
+    ...(options.sharingEnabled === false && {
+      DEV_REVIEW_SHARING_DISABLED: "1",
+    }),
     ...(options.serviceOrigin && {
       DEV_REVIEW_SERVICE_ORIGIN: options.serviceOrigin,
     }),
@@ -230,6 +237,7 @@ export class ReviewServerSupervisor extends Disposable {
   private startupError: string | undefined;
   private stopping = false;
   private telemetryEnabled: boolean;
+  private sharingEnabled: boolean;
   private readyProcess: IReviewServerProcess | undefined;
   private remoteHosts: ReviewGatewayHost[] | undefined;
 
@@ -259,6 +267,7 @@ export class ReviewServerSupervisor extends Disposable {
     super();
     this.readyTimeout = options.readyTimeout ?? REVIEW_SERVER_STARTUP_TIMEOUT_MS;
     this.telemetryEnabled = options.telemetryEnabled !== false;
+    this.sharingEnabled = options.sharingEnabled !== false;
     this.tls = this.createLoopbackCert();
   }
 
@@ -279,6 +288,12 @@ export class ReviewServerSupervisor extends Disposable {
   setTelemetryEnabled(enabled: boolean): void {
     this.telemetryEnabled = enabled;
     this.serverProcess?.postMessage({ type: "telemetry-setting", enabled });
+  }
+
+  /** Off applies at once; on applies when the server next starts. */
+  setSharingEnabled(enabled: boolean): void {
+    this.sharingEnabled = enabled;
+    this.serverProcess?.postMessage({ type: "sharing-setting", enabled });
   }
 
   setRemoteHosts(hosts: ReviewGatewayHost[]): void {
@@ -466,6 +481,7 @@ export class ReviewServerSupervisor extends Disposable {
       instanceId: this.instanceId,
       appPid,
       telemetryEnabled: this.telemetryEnabled,
+      sharingEnabled: this.sharingEnabled,
       serviceOrigin: this.options.serviceOrigin,
       rustAnalyzerSource,
       appSessionId: this.appSessionId,

@@ -33,6 +33,7 @@ import {
   REVIEW_REMOTE_INSTALL_MODES,
   REVIEW_REMOTE_INSTALL_SETTING,
   REVIEW_SERVICE_URL_SETTING,
+  REVIEW_SHARING_SETTING,
   REVIEW_TELEMETRY_SETTING,
 } from "../common/reviewConfigurationDefaults.js";
 import { remoteHostAliases } from "../common/reviewSshAlias.js";
@@ -151,6 +152,9 @@ export class ReviewDesktopHost extends Disposable {
         telemetryEnabled:
           this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
           false,
+        sharingEnabled:
+          this.configurationService.getValue<boolean>(REVIEW_SHARING_SETTING) !==
+          false,
         serviceOrigin: this.configurationService
           .getValue<string>(REVIEW_SERVICE_URL_SETTING)
           ?.trim(),
@@ -171,6 +175,12 @@ export class ReviewDesktopHost extends Disposable {
       );
     this._register(
       this.configurationService.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration(REVIEW_SHARING_SETTING))
+          this.supervisor.setSharingEnabled(
+            this.configurationService.getValue<boolean>(
+              REVIEW_SHARING_SETTING,
+            ) !== false,
+          );
         if (!event.affectsConfiguration(REVIEW_TELEMETRY_SETTING)) return;
         this.supervisor.setTelemetryEnabled(
           this.configurationService.getValue<boolean>(

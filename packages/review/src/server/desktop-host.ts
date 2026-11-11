@@ -10,6 +10,7 @@ import { openReviewProfile } from "@review/review-api/profile";
 import { ensureBundledRustAnalyzer } from "@review/review-bundled-tools";
 import { devReviewHome } from "@review/review-home-paths";
 import { ReviewTelemetry } from "@review/review-telemetry";
+import { applySharingPolicy } from "@review/sharing/disabled";
 import { reviewTelemetryChannel } from "@review/telemetry-config";
 
 import {
@@ -27,6 +28,8 @@ import {
 export async function runDesktopHost(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
+  applySharingPolicy(env);
+
   // Port 0 lets the OS choose; the ready event below reports what was bound.
   const port = requiredPort(env.DEV_FAST_REVIEW_SERVER_PORT);
 
@@ -169,6 +172,11 @@ export async function runDesktopHost(
       void stageRustAnalyzer();
     },
     (hosts) => server.setRemoteHosts(hosts),
+    (enabled) => {
+      // Turning sharing off applies at once; turning it on again waits for
+      // a restart, so an off from the shell or the policy always wins.
+      if (!enabled) process.env.DEV_REVIEW_SHARING_DISABLED = "1";
+    },
   );
   process.once("SIGINT", () => {
     void stop().then(() => process.exit(0));

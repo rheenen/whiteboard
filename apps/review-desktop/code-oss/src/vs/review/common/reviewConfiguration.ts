@@ -17,10 +17,11 @@
  * main-process consumer import data through this module and put the registry
  * back on its import path.
  */
+import { PolicyCategory } from '../../base/common/policy.js';
 import { localize } from '../../nls.js';
 import { Registry } from '../../platform/registry/common/platform.js';
 import { ConfigurationScope, Extensions, type IConfigurationRegistry } from '../../platform/configuration/common/configurationRegistry.js';
-import { REVIEW_DIAGRAM_FULLSCREEN_ON_CLICK_SETTING, REVIEW_DIFF_COLOR_THEME_SETTING, REVIEW_INLINE_LINE_NUMBERS_SETTING, DIFF_EDITOR_FONT_SIZE_SETTING, REVIEW_DOCUMENT_FONT_SIZE_BASE, REVIEW_DOCUMENT_FONT_SIZE_SETTING, REVIEW_DOCUMENT_WIDTH_CHOICES, REVIEW_DOCUMENT_WIDTH_SETTING, REVIEW_KEYMAPS, REVIEW_KEYMAP_SETTING, REVIEW_OPEN_FILES_IN_APPLICATION_SETTING, REVIEW_OPEN_FILES_IN_CHOICES, REVIEW_OPEN_FILES_IN_SETTING, REVIEW_PEEK_SIDE_BY_SIDE_SETTING, REVIEW_READING_FONTS, REVIEW_READING_FONT_FAMILY_SETTING, REVIEW_READING_FONT_SETTING, REVIEW_READY_NOTIFICATION_CHOICES, REVIEW_READY_NOTIFICATION_SETTING, REVIEW_REMOTE_HOSTS_SETTING, REVIEW_REMOTE_INSTALL_MODES, REVIEW_REMOTE_INSTALL_SETTING, REVIEW_SOFTWARE_MAP_SETTING, REVIEW_TELEMETRY_SETTING, curatedExtensionConfigurationDefaults, reviewConfigurationDefaults } from './reviewConfigurationDefaults.js';
+import { REVIEW_DIAGRAM_FULLSCREEN_ON_CLICK_SETTING, REVIEW_DIFF_COLOR_THEME_SETTING, REVIEW_INLINE_LINE_NUMBERS_SETTING, DIFF_EDITOR_FONT_SIZE_SETTING, REVIEW_DOCUMENT_FONT_SIZE_BASE, REVIEW_DOCUMENT_FONT_SIZE_SETTING, REVIEW_DOCUMENT_WIDTH_CHOICES, REVIEW_DOCUMENT_WIDTH_SETTING, REVIEW_KEYMAPS, REVIEW_KEYMAP_SETTING, REVIEW_OPEN_FILES_IN_APPLICATION_SETTING, REVIEW_OPEN_FILES_IN_CHOICES, REVIEW_OPEN_FILES_IN_SETTING, REVIEW_PEEK_SIDE_BY_SIDE_SETTING, REVIEW_READING_FONTS, REVIEW_READING_FONT_FAMILY_SETTING, REVIEW_READING_FONT_SETTING, REVIEW_READY_NOTIFICATION_CHOICES, REVIEW_READY_NOTIFICATION_SETTING, REVIEW_REMOTE_HOSTS_SETTING, REVIEW_REMOTE_INSTALL_MODES, REVIEW_REMOTE_INSTALL_SETTING, REVIEW_SHARING_SETTING, REVIEW_SOFTWARE_MAP_SETTING, REVIEW_TELEMETRY_SETTING, curatedExtensionConfigurationDefaults, reviewConfigurationDefaults } from './reviewConfigurationDefaults.js';
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
 
@@ -133,6 +134,20 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			default: true,
 			description: localize('review.telemetry.enabled', "Send anonymous Whiteboard usage data."),
+		},
+		[REVIEW_SHARING_SETTING]: {
+			type: 'boolean',
+			default: reviewConfigurationDefaults[REVIEW_SHARING_SETTING],
+			scope: ConfigurationScope.APPLICATION,
+			description: localize('review.sharing.enabled', "Allow signing in and sharing whiteboards as links. Exporting and opening .whiteboard files always works. Turning sharing on again takes effect after Whiteboard restarts."),
+			policy: {
+				name: 'WhiteboardSharingEnabled',
+				category: PolicyCategory.Telemetry,
+				minimumVersion: '1.129',
+				localization: {
+					description: { key: 'review.sharing.enabled.policy', value: localize('review.sharing.enabled.policy', "Allow Whiteboard to sign in and share whiteboards as links."), },
+				},
+			},
 		},
 		[REVIEW_SOFTWARE_MAP_SETTING]: {
 			type: 'boolean',
