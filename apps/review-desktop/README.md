@@ -103,12 +103,12 @@ built Desktop through the installed CLI and the JSON review API. See
 
 ### Remote hosts
 
-A development Desktop pins no archive. Set `DEV_FAST_REVIEW_REMOTE_RELEASES` to
-a URL serving the archives and their `.sha256` files, or install this
-checkout's archive with
-`node apps/review-desktop/scripts/remote-dev-install.mjs <alias>`. With
-`DEV_FAST_REVIEW_REMOTE_PUBLISH=1` and Cloudflare credentials, the script
-publishes the archives and prints the URL to export.
+No Desktop build pins an archive, and this build downloads nothing from
+dev.fast. Set `DEV_FAST_REVIEW_REMOTE_RELEASES` to a URL you host that serves
+the archives (`scripts/build-remote-tarball.mjs`) and their `.sha256` files,
+or install this checkout's archive with
+`node apps/review-desktop/scripts/remote-dev-install.mjs <alias>`, which copies
+it to the host over SSH.
 
 How remote hosts work (the user guide is `docs/remote-hosts.md`):
 
@@ -130,8 +130,8 @@ forward, to a VS Code server also on loopback.
 Desktop first probes the host and writes nothing. With no install it
 recognises, it asks once, then installs as your user; a host with a
 recognised install gets new versions without asking. The host downloads the
-archive from `install.dev.fast` and verifies Desktop's pinned checksum before
-unpacking. Desktop runs the same `install.sh` you can run by hand.
+archive from the `DEV_FAST_REVIEW_REMOTE_RELEASES` base and verifies its
+`.sha256` before unpacking; without that base Desktop installs nothing. Desktop runs the same `install.sh` you can run by hand.
 
 On update, Desktop installs its new version (also over a hand install),
 restarts the server it started, and keeps the previous version and any
@@ -139,19 +139,19 @@ version still running. A server you started yourself keeps running.
 
 `review.remote.install` controls this:
 
-| Value | Behavior |
-|---|---|
+| Value           | Behavior                                               |
+| --------------- | ------------------------------------------------------ |
 | `ask` (default) | Ask once per host, unless it has a recognised install. |
-| `always` | Install without asking. |
-| `never` | Never install; use `whiteboard` on the host's `PATH`. |
+| `always`        | Install without asking.                                |
+| `never`         | Never install; use `whiteboard` on the host's `PATH`.  |
 
 What Desktop writes on the remote:
 
-| Path | What it is |
-|---|---|
-| `~/.dev/whiteboard-remote/versions/<version>/` | One version, ~250 MB, with its own Node. |
-| `~/.dev/whiteboard-remote/install.lock/` | Present while an install runs. |
-| `~/.local/bin/whiteboard` | Launcher for the newest version, if that path is free or already Desktop's. |
+| Path                                           | What it is                                                                  |
+| ---------------------------------------------- | --------------------------------------------------------------------------- |
+| `~/.dev/whiteboard-remote/versions/<version>/` | One version, ~250 MB, with its own Node.                                    |
+| `~/.dev/whiteboard-remote/install.lock/`       | Present while an install runs.                                              |
+| `~/.local/bin/whiteboard`                      | Launcher for the newest version, if that path is free or already Desktop's. |
 
 With `DEV_REVIEW_HOME` set on the remote, `whiteboard-remote/` lives under it.
 Reviews are kept in `~/.dev`.
@@ -179,12 +179,12 @@ Optional groups are installed on each remote at its next connection, at your
 laptop's version. Groups you never turned on are never installed; turning one
 off leaves it on the remote, unused.
 
-| Group | Needs on the remote's login `PATH` | Downloads |
-|---|---|---|
-| Go | `go` | Go |
-| Rust | `cargo`, `rustc` | rust-analyzer, ~16 MB |
-| Swift | `swift` | Swift, LLDB DAP, ~16 MB |
-| C# | `dotnet` (.NET SDK) | C#, .NET Runtime, ~80 MB; OmniSharp from Microsoft on first start |
+| Group | Needs on the remote's login `PATH` | Downloads                                                         |
+| ----- | ---------------------------------- | ----------------------------------------------------------------- |
+| Go    | `go`                               | Go                                                                |
+| Rust  | `cargo`, `rustc`                   | rust-analyzer, ~16 MB                                             |
+| Swift | `swift`                            | Swift, LLDB DAP, ~16 MB                                           |
+| C#    | `dotnet` (.NET SDK)                | C#, .NET Runtime, ~80 MB; OmniSharp from Microsoft on first start |
 
 Swift and C# install but do not answer hovers yet, locally or remotely: Swift
 needs the task API, and on remotes `node-pty`. Their debuggers never start;
@@ -209,8 +209,9 @@ same history.
 ## Packaging and releases
 
 macOS (arm64 and x64) is the only packaged platform with release channels;
-Linux has a packaging script but no distribution. Signed builds auto-update
-from `https://update.dev.fast` on either the `stable` or `preview` channel.
+Linux has a packaging script but no distribution. This build has no update
+feed: `product.json` carries no `updateUrl`, so the app never checks for
+updates, and release validation rejects a build that has one.
 
 ### Local packaging
 
@@ -251,21 +252,19 @@ patch/minor/major bump. The workflow:
    notarizes via `app:package:macos`;
 4. gates the upload with `scripts/validate-release-artifacts.mjs` (curated
    extension closure, staple and Gatekeeper checks, and packaged `product.json`
-   commit/quality/updateUrl assertions), which also emits the `latest.json`
-   feed manifest for that arch;
+   commit/quality assertions, and no `updateUrl`);
 5. once both legs pass, a `publish` job per arch uploads its zip and dmg
-   payloads first, then its `latest.json` feed and dmg alias, so a client can
-   never see a manifest whose payload is missing;
-6. curls that arch's live feed to confirm the new release is served, attaches
-   the dmg to the GitHub release, and publishes it.
+   payloads first, then the dmg alias;
+6. attaches the dmg to the GitHub release, and publishes it.
 
 Each platform publishes as soon as its own build passes; one failing platform
-does not hold back the others. Latest aliases and feeds only move forward
+does not hold back the others. Latest aliases only move forward
 (`scripts/promote-release-aliases.mjs`; Linux's pointer has the same rule), so
 publishing an older version uploads its files and leaves latest alone. The
-first platform to publish takes the GitHub release out of draft. Platform
-builds start with the remote tarball job and wait for its pin artifact only
-before packaging (`scripts/wait-for-run-artifact.mjs`).
+first platform to publish takes the GitHub release out of draft. The remote
+tarball job builds the remote archives and attaches them to the GitHub release
+(the preview workflow keeps them as a run artifact); no Desktop build pins
+them.
 
 To retry a platform that failed, use **Re-run failed jobs** on the run. To
 build it again later for the same version, start a new run with that version's
@@ -276,8 +275,7 @@ gh workflow run review-desktop-release.yml -f version=v0.2.4 -f platforms=window
 gh workflow run review-desktop-preview.yml -f version=v0.2.5-preview.20261015.117 -f platforms=windows
 ```
 
-A backfill builds the tagged commit, reuses the published remote tarballs, and
-makes no version bump, tag, or new GitHub release. Linux packages are not
+A backfill builds the tagged commit and makes no version bump, tag, or new GitHub release. Linux packages are not
 byte-for-byte reproducible, so a Linux publish that failed partway is recovered
 by re-running its failed jobs, not by a backfill.
 
@@ -288,9 +286,8 @@ Windows builds in parallel with the Darwin payload and the Linux packages
 (`review-windows-build.yml` on the 16-core `review_big_boy_windows` runner) and
 signs every binary and installer with Azure Artifact Signing through the
 `windows-signing` environment. Its `publish` job then uploads the installers
-to `releases/<version>/win32-x64/`, points `install.dev.fast/windows` at the new
-per-user installer, updates the Windows update feeds, and attaches the
-installers to the GitHub release.
+to `releases/<version>/win32-x64/`, moves the latest alias to the new
+per-user installer, and attaches the installers to the GitHub release.
 
 ### Promoting a preview to stable
 
@@ -321,8 +318,7 @@ version still in `package.json` — the build stamps the release version in, the
 same way a preview build stamps its own.
 
 Promotion rebuilds from source. Preview and stable are different applications —
-separate bundle identifier, application name, data folders, URL scheme, and
-update feed — so the stable run stamps stable identity onto that commit and
+separate bundle identifier, application name, data folders and URL scheme — so the stable run stamps stable identity onto that commit and
 takes the same build, sign, notarize, upload, and publish path as any release.
 No preview binary is relabelled.
 
@@ -348,28 +344,18 @@ published platforms.
 That tag is what "Promoting a preview to stable" above takes as its
 `preview_tag`, and it stays promotable as `main` moves on.
 The ref must include the preview tooling, so branch it from a `main` that
-already contains this workflow and its scripts. Updates are keyed by commit;
-publishing an older commit intentionally rolls preview installations back to
-that build.
+already contains this workflow and its scripts.
 
-Install the latest preview from <https://install.dev.fast/preview>. It installs
+A preview build installs
 as `Whiteboard Preview.app`, displays as `/dev/fast Whiteboard Preview`, and uses an
 orange app-icon background so it stays visually distinct from stable in Finder,
 the Dock, and the app switcher.
 
 Preview uses its own bundle identifier, URL scheme, CLI name, and data folders,
 so it can run beside stable without replacing the stable app or sharing its
-settings. Preview updates continue to use the preview feed. To return to stable,
-open the existing `Whiteboard.app` or install it from <https://install.dev.fast>.
-Squirrel renames an install to the update's executable name, so the client
-sends its own bundle name (`?bundle=`) and the feed answers with a zip whose
-bundle and executable carry that name (the Review copy is re-signed and
-notarized on its own): `Review.app` installs stay `Review.app`, fresh installs
-are `Whiteboard.app`.
-
-Builds from before the preview identity split installed as `Review.app`.
-Reinstall once from <https://install.dev.fast/preview> after the split so the
-preview lands at the new application path; later preview updates retain it.
+settings. To return to stable, open the existing `Whiteboard.app` or install
+a stable build. The release still builds a `Review.app`-named zip beside the
+`Whiteboard.app` one (see `release-channel.mjs`).
 
 ### Linux-to-macOS build handoff
 
@@ -380,12 +366,12 @@ targets, and `REVIEW_DESKTOP_PRECOMPILED=1 scripts/package-macos.sh` consumes it
 on each macOS build leg (`darwin-arm64` and `darwin-x64`), packaging the target
 of the host it runs on.
 
-| Produced on Linux and transferred                                                                        | Produced or assembled on macOS                         |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Code OSS `out-build`, `out-vscode-min`, and `out`                                                        | Electron application bundle                            |
-| Compiled built-in extensions in `.build/extensions`                                                      | Darwin-native npm closure installed by `pnpm`          |
-| Manifest-selected `darwin-arm64` and `darwin-x64` VSIX payloads, including `ty` and rust-analyzer       | Manifest-selected extensions copied into the final app |
-| Review canvas/server and required workspace `dist` directories                                           | App icon, signatures, notarization, ZIP, and DMG       |
+| Produced on Linux and transferred                                                                 | Produced or assembled on macOS                         |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Code OSS `out-build`, `out-vscode-min`, and `out`                                                 | Electron application bundle                            |
+| Compiled built-in extensions in `.build/extensions`                                               | Darwin-native npm closure installed by `pnpm`          |
+| Manifest-selected `darwin-arm64` and `darwin-x64` VSIX payloads, including `ty` and rust-analyzer | Manifest-selected extensions copied into the final app |
+| Review canvas/server and required workspace `dist` directories                                    | App icon, signatures, notarization, ZIP, and DMG       |
 
 The curated-extension handoff is manifest-driven. Linux materializes the
 variants for every Darwin target, copies each into
@@ -409,69 +395,15 @@ parts of the contract in the same change:
    `packaged-runtime.test.mjs`, and repeat critical closure checks in
    `validate-release-artifacts.mjs` before upload.
 
-### Install and update hosts
-
-The update Worker serves both `install.dev.fast` and `update.dev.fast`
-in front of a private R2 bucket. The routes are
-disjoint, so both hostnames answer all of them and the Worker needs no
-host discrimination; the two names exist to give humans and Squirrel separate
-front doors.
-
-`GET /` is the stable install landing: it redirects to the
-`releases/latest/darwin-arm64/Whiteboard.dmg` alias, while `GET /preview` redirects
-to `releases/preview-latest/darwin-arm64/Whiteboard.dmg`. Browsers go to
-<https://dev.fast/install> or <https://dev.fast/install/preview> instead. For example,
-`curl -fLOJ https://install.dev.fast` downloads the current disk image. It
-deliberately does not read `latest.json` — the alias is uploaded with the
-payloads, so the download keeps working while the manifest is mid-upload. The
-keys stay version-free for that reason, so the version rides on each object's
-`Content-Disposition` instead and the saved file names itself. Stable uses
-`df-whiteboard-<version>.dmg`; preview uses
-`df-whiteboard-preview-<preview-version>.dmg`. curl only honours that with `-J`; a
-browser download always does.
-
-Homebrew casks (`devdotfast/tap/whiteboard`, `whiteboard@preview`) install the
-same versioned zips. The tap's hourly workflow bumps them from the update feed.
-
-```
-update/stable/<target>/latest.json        current-release manifest
-update/preview/<target>/latest.json       current-preview manifest
-releases/<version>/<target>/              Whiteboard-<target>-<version>.zip + .dmg
-                                          Review-<target>-<version>.zip (Review.app-named copy)
-releases/latest/<target>/Whiteboard.dmg
-                                          direct-download alias, saved as
-                                          df-whiteboard-<version>.dmg
-releases/preview-latest/<target>/Whiteboard.dmg
-                                          preview-download alias, saved as
-                                          df-whiteboard-preview-<preview-version>.dmg
-```
-
-`<target>` is `darwin-arm64` or `darwin-x64`; every key exists for both.
-
-`GET /api/update/:platform/:quality/:commit` answers 204 when the caller's
-stamped commit matches the manifest (or no manifest exists yet) and Squirrel
-JSON otherwise; `GET /releases/*` streams payloads. Intel clients request the
-plain `darwin` platform, which the Worker maps to `darwin-x64`. Because the feed keys its
-answer off the caller's commit, the fork's `doDownloadUpdate` sends the
-installed commit — not the target commit — when re-checking (see `UPSTREAM`).
-
 ### CI credentials
 
 Repository secrets: `APPLE_CERT_BASE64`, `APPLE_CERT_PASSWORD`,
 `APPLE_KEYCHAIN_PASSWORD`, `APPLE_API_KEY_P8`, `R2_ACCESS_KEY_ID`,
-`R2_SECRET_ACCESS_KEY`, `POSTHOG_CLI_API_KEY` (a PostHog personal API key
-with the error tracking write scope). Repository variables:
+`R2_SECRET_ACCESS_KEY`. Repository variables:
 `APPLE_SIGN_IDENTITY`, `APPLE_TEAM_ID`, `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER_ID`, `R2_ENDPOINT_URL`, `R2_RELEASE_BUCKET`,
-`REVIEW_POSTHOG_KEY` (telemetry key embedded into release builds; source
-builds embed none), `POSTHOG_CLI_PROJECT_ID` (the PostHog project that
-receives the source maps), and `SKIP_NOTARIZE` (normally unset; set to `1`
-only to dry-run the workflow without signing).
-
-A build that embeds `REVIEW_POSTHOG_KEY` also uploads its source maps to
-PostHog error tracking (`scripts/upload-source-maps.mjs`), so reported stack
-traces resolve to source files and functions. That build fails when the two
-`POSTHOG_CLI_*` credentials are missing.
+`APPLE_API_ISSUER_ID`, `R2_ENDPOINT_URL`, `R2_RELEASE_BUCKET`, and
+`SKIP_NOTARIZE` (normally unset; set to `1` only to dry-run the workflow
+without signing). No build embeds a telemetry key or uploads source maps.
 
 Normal CI uses GitHub's standard Ubuntu runner. Windows builds, in CI and in
 releases, use the `review_big_boy_windows` larger runner in the `review_windows`
@@ -528,19 +460,18 @@ like Home and Agent Setup, not the stock VS Code settings editor. It holds:
 
 | Section               | Setting                                                                       |
 | --------------------- | ----------------------------------------------------------------------------- |
-| Privacy               | Share anonymous usage data — see [docs/telemetry.md](../../docs/telemetry.md) |
 | Editor                | Theme, Keymap                                                                 |
 | Tools                 | Extensions                                                                    |
-| Experimental Features | Software Map, Trace capture                                                   |
+| Experimental Features | Software Map                                                                  |
 
 Software Map defaults to off. Enable it to add the Map tab to reviews.
 Disable it to remove Map entry points. This preference persists in the
 application profile. The change does not require a reload.
 
-Trace capture defaults to off. Enabling capture takes S3/R2 credentials,
-installs the agent session hooks and the `trace-archaeology` skill for every
-installed agent, and lets reviews quote agent sessions. Disabling removes the hooks and skill again. The state lives
-in the review server's machine trace settings, not the application profile.
+This build has no trace capture. The CLI setup at startup and **Uninstall
+Whiteboard Desktop** remove the agent and Git hooks that earlier builds
+installed for it. Boards that quote agent sessions still open and show a
+placeholder for each quote.
 
 The application menu is macOS only. On Windows and Linux the same surfaces are
 available from the command palette (`review.openSettings`).

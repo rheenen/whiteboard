@@ -16,10 +16,6 @@ const INSTALL_SCRIPT = fileURLToPath(
   new URL("../../../packages/review/remote/install.sh", import.meta.url),
 );
 
-const BUCKET = "dev-fast-desktop-artifacts";
-
-const RELEASES = "https://install.dev.fast/releases";
-
 const TARGETS = { x86_64: "linux-x64", aarch64: "linux-arm64" };
 
 const sshArgs = (sshConfig) => [
@@ -71,7 +67,15 @@ export async function remoteDevInstall(
       { stdio: ["ignore", "inherit", "inherit"] },
     );
 
-    const args = ["install", "--version", built.version, "--sha256", built.sha256, "--file", copy];
+    const args = [
+      "install",
+      "--version",
+      built.version,
+      "--sha256",
+      built.sha256,
+      "--file",
+      copy,
+    ];
 
     let said;
 
@@ -88,7 +92,9 @@ export async function remoteDevInstall(
     const installed = installedFrom(said);
 
     if (!installed)
-      throw new Error(`install.sh did not install on ${alias}:\n${said.trim()}`);
+      throw new Error(
+        `install.sh did not install on ${alias}:\n${said.trim()}`,
+      );
 
     return ssh(
       alias,
@@ -110,54 +116,6 @@ export async function remoteDevInstall(
   }
 }
 
-/** Puts a tarball and its .sha256 at releases/dev/<checkout state>/remote/ on install.dev.fast, unless the same .sha256 is there. */
-async function publishRemoteTarball({ file, sha256, state }) {
-  const account = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-
-  if (!account || !token)
-    throw new Error(
-      "DEV_FAST_REVIEW_REMOTE_PUBLISH=1 needs CLOUDFLARE_ACCOUNT_ID (the hex host of R2_ENDPOINT_URL) and CLOUDFLARE_API_TOKEN.",
-    );
-
-  const name = path.basename(file);
-  const segments = ["releases", "dev", state, "remote"];
-
-  const url = (key) =>
-    `${RELEASES}/${[...segments.slice(1), key].map(encodeURIComponent).join("/")}`;
-
-  const sum = `${sha256}  ${name}\n`;
-
-  const published = await fetch(url(`${name}.sha256`)).then((response) =>
-    response.ok ? response.text() : undefined,
-  );
-
-  if (published === sum) return false;
-
-  for (const [key, body, type] of [
-    [name, await readFile(file), "application/x-xz"],
-    [`${name}.sha256`, sum, "text/plain"],
-  ]) {
-    const object = [...segments, key].map(encodeURIComponent).join("/");
-
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account}/r2/buckets/${BUCKET}/objects/${object}`,
-      {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": type },
-        body,
-      },
-    );
-
-    if (!response.ok)
-      throw new Error(
-        `Publishing ${key} answered ${response.status}: ${(await response.text()).slice(0, 500)}`,
-      );
-  }
-
-  return true;
-}
-
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -168,43 +126,21 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   });
 
   const [alias] = positionals;
-  const publish = process.env.DEV_FAST_REVIEW_REMOTE_PUBLISH === "1";
   const sshConfig = values["ssh-config"];
 
-  if ((!alias && !publish) || positionals.length > 1)
+  if (!alias || positionals.length > 1)
     throw new Error(
-      "usage: remote-dev-install.mjs <ssh-alias> [--target linux-x64|linux-arm64] [--ssh-config <file>]\n       DEV_FAST_REVIEW_REMOTE_PUBLISH=1 remote-dev-install.mjs [<ssh-alias>] ...",
+      "usage: remote-dev-install.mjs <ssh-alias> [--target linux-x64|linux-arm64] [--ssh-config <file>]",
     );
 
   if (values.target && !REMOTE_TARGETS.includes(values.target))
     throw new Error(`--target must be one of ${REMOTE_TARGETS.join(", ")}`);
 
-  const stdio = ["ignore", process.stderr, process.stderr];
-
-  let state;
-
-  // Both targets, so the printed releases URL serves either arch.
-  if (publish)
-    for (const each of REMOTE_TARGETS) {
-      const built = await buildDevRemoteTarball({ target: each, stdio });
-
-      state = built.state;
-      console.error(
-        `${path.basename(built.file)}: ${(await publishRemoteTarball(built)) ? "published" : "already published"}`,
-      );
-    }
-
-  if (alias)
-    console.log(
-      await remoteDevInstall(alias, {
-        target: values.target,
-        sshConfig,
-        stdio,
-      }),
-    );
-
-  if (publish)
-    console.log(
-      `export DEV_FAST_REVIEW_REMOTE_RELEASES=${RELEASES}/dev/${state}/remote/`,
-    );
+  console.log(
+    await remoteDevInstall(alias, {
+      target: values.target,
+      sshConfig,
+      stdio: ["ignore", process.stderr, process.stderr],
+    }),
+  );
 }

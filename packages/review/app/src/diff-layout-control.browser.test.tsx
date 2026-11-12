@@ -27,7 +27,6 @@ describe("DiffLayoutControl", () => {
     >
   >;
 
-  let posted: unknown[];
   let showNumbers: boolean;
   let numbersChanged: Set<(show: boolean) => void>;
   let setNumbers: ReturnType<typeof vi.fn<(next: boolean) => Promise<void>>>;
@@ -38,7 +37,6 @@ describe("DiffLayoutControl", () => {
     root = createRoot(container);
     layouts = { diff: "split", peek: "unified" };
     listeners = new Set();
-    posted = [];
     showNumbers = false;
     numbersChanged = new Set();
     setNumbers = vi.fn<(next: boolean) => Promise<void>>(
@@ -73,12 +71,7 @@ describe("DiffLayoutControl", () => {
 
           return { dispose: () => listeners.delete(entry) };
         },
-        request: async (url, init) => {
-          if (url.includes("/telemetry/event"))
-            posted.push(JSON.parse(String(init?.body)));
-
-          return Response.json({ ok: true });
-        },
+        request: async () => Response.json({ ok: true }),
       },
     );
 
@@ -189,15 +182,6 @@ describe("DiffLayoutControl", () => {
     expect(layouts.diff).toBe("split");
     await act(async () => write.reject(new Error("Read-only settings")));
     expect(chosen("Diff")).toBe("Split");
-    expect(posted).toContainEqual(
-      expect.objectContaining({
-        name: "client_error",
-        properties: expect.objectContaining({
-          error_source: "settings",
-          component: "diff_layout",
-        }),
-      }),
-    );
     await act(async () => confirm("diff", "unified"));
     expect(chosen("Diff")).toBe("Unified");
   });

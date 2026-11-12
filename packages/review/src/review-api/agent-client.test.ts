@@ -172,18 +172,7 @@ it("uses host-advertised tools to edit, retry, reject invalid content and inspec
 it("serves MCP framing without stdout diagnostics and returns host errors as tool errors", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();
-  const calls: Array<[string, string, boolean, string?]> = [];
-
-  const server = await serveReviewMcp(
-    async () => ({ client }),
-    stdin,
-    stdout,
-    undefined,
-    false,
-    undefined,
-    ({ tool, via, ok, errorName }) =>
-      void calls.push(errorName ? [tool, via, ok, errorName] : [tool, via, ok]),
-  );
+  const server = await serveReviewMcp(async () => ({ client }), stdin, stdout);
 
   let output = "";
   stdout.on("data", (chunk) => {
@@ -299,89 +288,8 @@ it("serves MCP framing without stdout diagnostics and returns host errors as too
       sessionId: created.reviewId,
       document: [],
     });
-
-    await request(7, "tools/call", { name: "my private notes", arguments: {} });
-
-    expect(calls).toEqual([
-      ["session_get", "mcp", false, "review_not_found"],
-      ["session_list", "mcp", true],
-      ["session_get", "mcp", true],
-      ["session_get", "mcp", true],
-      ["other", "mcp", false, "usage_error"],
-    ]);
   } finally {
     await server.close();
-  }
-});
-
-it("reports each api tool call with its outcome", async () => {
-  const connection = vi
-    .spyOn(agentClient, "connectReviewInstance")
-    .mockResolvedValue({ client, instance: { key: "stable" } });
-
-  const calls: Array<[string, string, boolean, string?]> = [];
-
-  const discard = new Writable({
-    write(_chunk, _encoding, done) {
-      done();
-    },
-  });
-
-  const run = (argv: string[]) =>
-    runReviewAgentCli({
-      argv,
-      stdout: discard,
-      stderr: discard,
-      // Queued a tick late, like a real capture: the command must wait.
-      onToolCall: async ({ tool, via, ok, errorName }) => {
-        await new Promise((resolve) => setImmediate(resolve));
-        calls.push(errorName ? [tool, via, ok, errorName] : [tool, via, ok]);
-      },
-    });
-
-  try {
-    expect(await run(["api", "session_list"])).toBe(0);
-    expect(await run(["api", "session_get", '{"sessionId":"missing"}'])).toBe(
-      1,
-    );
-    expect(await run(["api", "no_such_tool"])).toBe(1);
-    expect(calls).toEqual([
-      ["session_list", "api", true],
-      ["session_get", "api", false, "review_not_found"],
-    ]);
-  } finally {
-    connection.mockRestore();
-  }
-});
-
-it("hands the parent CLI the release of the Desktop an api call reached", async () => {
-  const connection = vi
-    .spyOn(agentClient, "connectReviewInstance")
-    .mockResolvedValue({
-      client,
-      instance: { key: "preview", appVersion: "0.1.6-preview.20261002.90" },
-    });
-
-  const releases: Array<string | undefined> = [];
-
-  const discard = new Writable({
-    write(_chunk, _encoding, done) {
-      done();
-    },
-  });
-
-  try {
-    expect(
-      await runReviewAgentCli({
-        argv: ["api", "session_list"],
-        stdout: discard,
-        stderr: discard,
-        onDesktop: (appVersion) => releases.push(appVersion),
-      }),
-    ).toBe(0);
-    expect(releases).toEqual(["0.1.6-preview.20261002.90"]);
-  } finally {
-    connection.mockRestore();
   }
 });
 
@@ -514,64 +422,6 @@ it("binds existing content through the host-advertised PR tool", async () => {
   });
 });
 
-it("tells the server which surface and agent harness made the call", async () => {
-  const stateDir = await mkdtemp(path.join(tmpdir(), "agent-origin-"));
-  const instanceId = randomUUID();
-  const seen: Array<[string | undefined, string | undefined]> = [];
-
-  const server = createServer((request, response) => {
-    response.setHeader("content-type", "application/json");
-
-    if (request.url === "/health") {
-      response.end(JSON.stringify({ ok: true, instanceId }));
-
-      return;
-    }
-
-    seen.push([
-      request.headers["x-review-via"]?.toString(),
-      request.headers["x-review-agent"]?.toString(),
-    ]);
-    response.end("[]");
-  });
-
-  try {
-    server.listen(0, "127.0.0.1");
-    await once(server, "listening");
-    const { port } = z.object({ port: z.number() }).parse(server.address());
-    await mkdir(path.join(stateDir, "review-server"), { recursive: true });
-    await writeFile(
-      path.join(stateDir, "review-server", "server.json"),
-      JSON.stringify({
-        version: 1,
-        instanceId,
-        url: `http://127.0.0.1:${port}`,
-        serverPid: process.pid,
-        token: "token",
-      }),
-    );
-
-    const discard = new Writable({
-      write(_chunk, _encoding, done) {
-        done();
-      },
-    });
-
-    expect(
-      await runReviewAgentCli({
-        argv: ["api", "tools"],
-        stdout: discard,
-        stderr: discard,
-        env: { DEV_REVIEW_SERVER_DIR: stateDir, CODEX_THREAD_ID: "thread-1" },
-      }),
-    ).toBe(0);
-    expect(seen).toEqual([["api", "codex"]]);
-  } finally {
-    server.close();
-    await rm(stateDir, { recursive: true, force: true });
-  }
-});
-
 it("keeps an MCP session on the instance key it first reached", async () => {
   const keys: (string | undefined)[] = [];
 
@@ -591,7 +441,6 @@ it("keeps an MCP session on the instance key it first reached", async () => {
     stdin,
     stdout,
     process.stderr,
-    false,
     async (problem) => ({ desktopAvailable: false, problem }),
   );
 
@@ -632,70 +481,6 @@ it("keeps an MCP session on the instance key it first reached", async () => {
     expect(result.isError).toBeFalsy();
   } finally {
     await server.close();
-  }
-});
-
-it("names the agent from the MCP handshake, falling back to the session environment", async () => {
-  // The header names the agent on reviews the session creates; the call names it on tool events.
-  const headerAgents: (string | undefined)[] = [];
-  const callAgents: (string | undefined)[] = [];
-
-  const connection = vi
-    .spyOn(agentClient, "connectReviewInstance")
-    .mockImplementation(async (_env, headers) => {
-      headerAgents.push(headers?.["x-review-agent"]);
-
-      return { client };
-    });
-
-  const session = async (clientName: string, env: NodeJS.ProcessEnv) => {
-    const stdin = new PassThrough();
-    const stdout = new PassThrough();
-    let output = "";
-    stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-
-    await runReviewAgentCli({
-      argv: ["mcp"],
-      env,
-      stdin,
-      stdout,
-      stderr: new PassThrough(),
-      onToolCall: ({ agentKind }) => void callAgents.push(agentKind),
-    });
-
-    const reply = async (id: number, method: string, params: JsonObject) => {
-      stdin.write(
-        JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n",
-      );
-      await expect
-        .poll(() =>
-          output
-            .split("\n")
-            .filter(Boolean)
-            .some((line) => JSON.parse(line).id === id),
-        )
-        .toBe(true);
-    };
-
-    await reply(1, "initialize", {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: clientName, version: "1" },
-    });
-    await reply(2, "tools/call", { name: "session_list", arguments: {} });
-    stdin.end();
-  };
-
-  try {
-    // Codex strips CODEX_* from the server's environment; its handshake says who it is.
-    await session("codex-mcp-client", {});
-    await session("some-editor", { CLAUDE_CODE_SESSION_ID: "session" });
-    expect(headerAgents).toEqual(["codex", "claude"]);
-    expect(callAgents).toEqual(["codex", "claude"]);
-  } finally {
-    connection.mockRestore();
   }
 });
 

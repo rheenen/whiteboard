@@ -1,74 +1,71 @@
 # Privacy
 
 Whiteboard reads source code and agent-authored documents on your machine. This
-page covers what stays local, what Whiteboard sends, and what you choose to
-share. The [dev.fast privacy policy](https://dev.fast/privacy) is the policy
-governing Whiteboard.
+page covers what stays local and what Whiteboard sends over the network.
+
+## This build sends nothing to dev.fast
+
+This build of Whiteboard has no connection to dev.fast or any other service of
+the upstream vendor. It has:
+
+- no sign-in: no `whiteboard login`, `logout` or `whoami`, and no account in
+  Settings;
+- no share service: whiteboards are never uploaded, and share links are not
+  created, opened or revoked;
+- no **Report a bug** and no crash dump uploads;
+- no feedback form;
+- no usage data or error reports, and no setting for them;
+- no update feed: the app never checks for or downloads updates;
+- no remote host downloads from dev.fast: Desktop installs Whiteboard on an SSH
+  host only from a release base you host yourself (see
+  [Remote hosts](remote-hosts.md)).
+
+Settings that earlier builds stored for these features are ignored.
 
 ## What stays local
 
-Whiteboard keeps whiteboards, including copies opened from share links, in
-`~/.dev/review-api.db`, repositories it clones for share links in
-`~/.dev/shared-repositories/`, and app state in `~/.dev/review-desktop/`. These
-names predate the Whiteboard rename.
+Whiteboard keeps whiteboards and your comments on them in
+`~/.dev/review-api.db`, repositories it clones for `.whiteboard` files where you
+choose, and app state in `~/.dev/review-desktop/`. These names predate the
+Whiteboard rename.
 
-## Telemetry and error reports
+## .whiteboard files
 
-Anonymous telemetry is on by default. It records feature use as categories,
-counts, durations and versions, under a random installation ID. It never
-includes source code, diffs, paths, repository names, refs, whiteboard text,
-prompts, model output, or your email, username or hostname. Signing in with
-GitHub links your installations through a one-way hash of your account ID.
+`whiteboard export` and **Export file…** write a whiteboard to a `.whiteboard`
+file and upload nothing. The file holds the document text, software maps, the
+source lines the whiteboard references, the commits it is pinned to, and the
+repository's remote URL without credentials. Anyone you give the file to can
+read all of that.
 
-Whiteboard also reports its own errors, with paths, addresses and secrets
-removed on your machine first. After a crash, the next launch uploads Electron's
-crash dump, which can contain process memory, including open source text. It
-is kept for 30 days.
+Whiteboard Desktop opens such a file on a checkout of its repository that you
+already have. Without one, it asks whether to clone the repository into a
+folder you choose (by default `~/projects`), or to open the file read-only.
+Cloning fetches from the repository's remote with your own Git access. A
+read-only board shows the source lines the file carries, and keeps them in
+`~/.dev/review-api.db`; it has no commits, diffs or maps.
 
-To turn both off, open Settings and disable **Share anonymous usage data**, or
-set `DO_NOT_TRACK=1`. With telemetry off, crash dumps are deleted without
-upload. The [telemetry reference](telemetry.md) lists every event.
+## What Whiteboard does send
 
-## Bug reports
+Whiteboard reaches the network only for work you ask of it:
 
-**Report a bug** sends nothing until you select **Send**. You choose whether to
-attach the whiteboard (its text, pinned commits, branch and pull request),
-the diffs it shows, and a screenshot. Every report also includes your
-description and the app version and platform. Reports are kept in private
-storage for 90 days, and are sent even with telemetry off.
+- Git fetches and clones from your repositories' own remotes;
+- pull request data from GitHub, GitHub Enterprise or Azure DevOps, with your
+  own credentials;
+- language extensions and servers, with pinned checksums, from Open VSX and
+  their publishers;
+- the project's release notes from GitHub.
 
-## Sharing
+## Agent traces
 
-Sharing is explicit. `whiteboard share` uploads an immutable copy of one saved
-whiteboard version to the /dev/fast share service and returns a link. The copy
-includes the document text, software maps, complete trace
-conversations, the source lines the whiteboard references, the commits it is
-pinned to, your GitHub login, and the repository's GitHub clone URL. Anyone
-with the link can read the copy in a browser. Opening it in Whiteboard Desktop
-makes a copy you can edit and fetches the pinned commits from GitHub with the
-recipient's own access.
-`whiteboard share revoke <share-id>` stops future downloads.
+Whiteboard does not capture agent sessions, upload transcripts or read them
+from a trace store. Setup removes the agent and Git hooks that earlier builds
+installed for trace capture. Trace settings, S3/R2 credentials and local
+trace files that earlier builds wrote stay on disk until you delete them,
+for example `~/.dev/trace`, `~/.dev/trace-search` and `~/.config/dev-trace`.
+A `.whiteboard` file that still carries traces opens without them.
 
-## Hosted trace store
+## Files earlier builds left
 
-Trace capture is off by default and needs your consent for each repository.
-Once you allow a repository (`whiteboard trace allow`) with the hosted store
-selected, Whiteboard uploads complete agent session transcripts for that
-repository to the /dev/fast hosted store. Transcripts can contain prompts,
-model output, source code, file paths, URLs and email addresses. Each upload
-also records the branch and the Git author name.
-
-Only GitHub users with push access to the repository can find or read its
-traces. Read-only collaborators, former contributors and the public cannot,
-even for a public repository. Traces are encrypted with keys /dev/fast
-controls, so /dev/fast can decrypt them. The GitHub app requests the `repo`
-scope to check access.
-
-- `whiteboard trace deny` stops uploads from this machine and keeps earlier
-  ones.
-- `whiteboard trace store delete` deletes the repository's hosted traces
-  (repository admins only). Deletion is not instant: issued download links and
-  stored copies expire on a set schedule.
-- `whiteboard logout` forgets the local login only.
-
-A store in your own S3 or R2 bucket sends nothing to /dev/fast.
+Files that earlier builds wrote for sign-in, sharing or telemetry stay on disk
+until you delete them, for example `~/.dev/auth.json`, `~/.dev/sharing-disabled`
+and the telemetry state in `~/.dev/`. This build does not read them.

@@ -16,6 +16,7 @@ import {
   readReviewPackageVersion,
 } from "@review/package-paths.js";
 import { openReviewProfile } from "@review/review-api/profile.js";
+import { sharedProtocols } from "@review/sharing/repository.js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { createGlobalReviewServer } from "./desktop-server.js";
@@ -30,6 +31,9 @@ import {
   summary,
 } from "./review-gateway-test-utils.js";
 
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
+
 const version = readReviewPackageVersion(import.meta.url);
 
 const LOCAL_TOKEN = "local-token";
@@ -41,7 +45,6 @@ const cleanups: (() => Promise<void>)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-gateway-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
 });
 
 afterEach(async () => {
@@ -184,44 +187,19 @@ it("replaces this machine's token with the remote's, drops its credentials and m
   expect(seen?.headers.authorization).toBeUndefined();
 });
 
-it("captures a remote review's canvas events locally and refuses local-only routes", async () => {
+it("refuses a remote review's local-only routes", async () => {
   const reviewId = randomUUID();
   const fake = await startFake({ version, reviewIds: [reviewId] });
-  const captured: [string, unknown][] = [];
 
-  const { request, gateway } = await startLocalGateway(
-    root,
-    [{ alias: "wb-a", endpoint: fake.endpoint }],
-    {
-      remoteEvent: async (event, id) => {
-        captured.push([id, await event.json()]);
-      },
-    },
-  );
+  const { request, gateway } = await startLocalGateway(root, [
+    { alias: "wb-a", endpoint: fake.endpoint },
+  ]);
 
   await expect.poll(() => gateway.hosts()[0]?.state).toBe("online");
   expect(gateway.isRemote(reviewId)).toBe(true);
 
-  const telemetry = await request(`/${reviewId}/telemetry/event`, {
-    method: "POST",
-    body: '{"name":"ask_sent"}',
-  });
-
-  expect(telemetry.status).toBe(200);
-  expect(telemetry.headers.get(REVIEW_HOST_HEADER)).toBe("wb-a");
-  expect(captured).toEqual([[reviewId, { name: "ask_sent" }]]);
-
-  const tab = await request(`/${reviewId}/telemetry/tab`, {
-    method: "POST",
-    body: "{}",
-  });
-
-  expect(tab.status).toBe(200);
-  expect(captured).toHaveLength(1);
-
   for (const [method, route] of [
     ["POST", "open"],
-    ["GET", "agent-traces"],
     ["GET", "workspaces"],
     ["POST", "environment"],
   ] as const) {

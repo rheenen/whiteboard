@@ -10,7 +10,7 @@ import { REVIEW_DESKTOP_CONNECTION_VERSION } from "../common/reviewDesktopBootst
 import { ReviewDesktopConnectionService } from "./reviewDesktopConnectionService.js";
 
 function serviceWith(): ReviewDesktopConnectionService {
-	const service = new ReviewDesktopConnectionService({} as never, {} as never);
+	const service = new ReviewDesktopConnectionService({} as never);
 	Object.assign(service, {
 		connection: {
 			version: 1,
@@ -41,7 +41,6 @@ test("install status shares concurrent scans and refreshes on subsequent checks"
 		return Response.json({
 			fingerprint: "test", stamp: null, stale: requests > 1, updateNeeded: false,
 			shim: { path: "/tmp/review", installed: false, profileConfigured: false, onPath: false },
-			trace: { enabled: false, configured: false, autoActivateRepositories: false, envPath: "/tmp/env", settingsPath: "/tmp/settings" },
 			cli: null,
 			connect: { command: "review", args: ["mcp"], prompts: { claude: "c", codex: "c", cursor: "c", opencode: "c", pi: "c", omp: "c", copilot: "c" }, plugins: { claude: { label: "c" }, codex: { label: "c" }, cursor: { label: "c" }, opencode: { label: "c" }, pi: { label: "c" }, omp: { label: "c" }, copilot: { label: "c" } } },
 			legacySkills: [],
@@ -91,7 +90,6 @@ for (const reachable of [true, false]) {
 					}),
 				}),
 			} as never,
-			{} as never,
 		);
 		t.after(() => service.dispose());
 		mockFetch(t, async (input) => {

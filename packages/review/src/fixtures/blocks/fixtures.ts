@@ -6,12 +6,7 @@ import { type JsonValue, parseJsonText } from "@dev.fast/review-protocol";
 
 export const BLOCK_FIXTURES_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
-export {
-  FIXTURE_IMAGE_ID,
-  FIXTURE_MAP_ID,
-  FIXTURE_TRACE_EVENT_ID,
-  FIXTURE_TRACE_ID,
-} from "./ids.js";
+export { FIXTURE_IMAGE_ID, FIXTURE_MAP_ID } from "./ids.js";
 
 /** One entry per `<type>.json`: the block type and its array of valid blocks. */
 export async function readBlockFixtures(): Promise<Map<string, JsonValue[]>> {

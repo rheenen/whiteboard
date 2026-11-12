@@ -61,7 +61,6 @@ export default defineConfig({
       /^@dev\.fast\/local-vcs$/,
       /^@dev\.fast\/review-protocol$/,
       /^@dev\.fast\/review-share-protocol$/,
-      /^@dev\.fast\/trace-protocol$/,
       /^@dev\.fast\/whiteboard-document$/,
       // Bundled to keep its KaTeX dependency out of the runtime.
       /^micromark-extension-math$/,

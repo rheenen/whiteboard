@@ -22,6 +22,19 @@ test("blocks disabled Microsoft service and asset hosts", () => {
   }
 });
 
+test("blocks every dev.fast service host", () => {
+  for (const url of [
+    "https://dev.fast/api/feedback",
+    "https://e.dev.fast/i/v0/e/",
+    "https://bug.dev.fast/api/v2/reports",
+    "https://app.dev.fast/s/abc",
+    "https://install.dev.fast/releases/1.0.0/remote/install.sh",
+    "https://update.dev.fast/api/update/darwin/stable/0",
+  ]) {
+    assert.ok(blockedReviewRequestReason(url), url);
+  }
+});
+
 test("blocks Copilot API paths without blocking ordinary GitHub API use", () => {
   assert.ok(
     blockedReviewRequestReason(

@@ -1,4 +1,7 @@
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+// Restores the Git hook path of every repository an earlier build pointed
+// at its trace hooks. Trace capture is gone; only the cleanup remains.
+
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { jsonArray, jsonString, parseJsonText } from "@dev.fast/json";
@@ -6,16 +9,7 @@ import { gitAt } from "@dev.fast/local-vcs";
 import { z } from "zod";
 
 import { writeFileAtomicAsync } from "./atomic-write";
-import {
-  type TraceCommand,
-  type TraceScope,
-  keepTraceExecutable,
-  renderTraceCommand,
-  resolveTraceCommand,
-  shellQuote,
-  traceCommandExecutable,
-  traceHomeDir,
-} from "./trace-command";
+import { keepTraceExecutable, traceCommandExecutable } from "./trace-command";
 
 const repositoryHookStateSchema = z.object({
   version: z.literal(1),
@@ -29,7 +23,7 @@ const repositoryHookStateSchema = z.object({
 
 type RepositoryHookState = z.infer<typeof repositoryHookStateSchema>;
 
-export interface TraceRepositoryStatus {
+interface TraceRepositoryStatus {
   repository: boolean;
   enabled: boolean;
   root?: string;
@@ -40,130 +34,9 @@ export interface TraceRepositoryStatus {
   message: string;
 }
 
-export async function enableTraceRepository(input: {
+async function disableTraceRepository(input: {
   cwd: string;
-  scope: TraceScope;
-  reviewCommand?: string | TraceCommand;
-  /** Explicit command migration; ordinary activation preserves a working installation. */
-  replaceCommand?: boolean;
-}): Promise<TraceRepositoryStatus> {
-  const resolved = await resolveRepository(input.cwd);
-
-  if (!resolved) {
-    return {
-      repository: false,
-      enabled: false,
-      message: "Not inside a Git repository.",
-    };
-  }
-
-  const statePath = path.join(
-    resolved.commonDir,
-    "dev-fast",
-    "trace-hooks",
-    "state.json",
-  );
-
-  const hooksPath = path.join(
-    resolved.commonDir,
-    "dev-fast",
-    "trace-hooks",
-    "hooks",
-  );
-
-  const current = await configuredHooksPath(resolved.root);
-  const oldState = await readState(statePath);
-
-  const alreadyManaged =
-    path.resolve(resolved.root, current.value || ".") ===
-    path.resolve(hooksPath);
-
-  const previousWasConfigured = alreadyManaged
-    ? (oldState?.previousWasConfigured ?? false)
-    : current.configured;
-
-  const previousHooksPath = alreadyManaged
-    ? (oldState?.previousHooksPath ?? path.join(resolved.commonDir, "hooks"))
-    : current.configured
-      ? current.value
-      : path.join(resolved.commonDir, "hooks");
-
-  const previousHookDirectory = alreadyManaged
-    ? (oldState?.previousHookDirectory ??
-      resolveHooksPath(resolved.root, previousHooksPath))
-    : previousHooksPath;
-
-  const homeDir = input.scope.homeDir;
-
-  let reviewCommand = renderTraceCommand(
-    resolveTraceCommand({
-      explicit: input.reviewCommand,
-      env: input.scope.env,
-      homeDir,
-    }),
-  );
-
-  if (
-    alreadyManaged &&
-    !input.replaceCommand &&
-    oldState?.command &&
-    keepTraceExecutable(
-      traceCommandExecutable(oldState.command),
-      traceCommandExecutable(reviewCommand) ?? "",
-    )
-  )
-    reviewCommand = oldState.command;
-
-  const state: RepositoryHookState = {
-    version: 1,
-    root: resolved.root,
-    managedHooksPath: hooksPath,
-    previousHooksPath,
-    previousHookDirectory,
-    previousWasConfigured,
-    command: reviewCommand,
-  };
-
-  await mkdir(hooksPath, { recursive: true });
-  await writeHook(
-    path.join(hooksPath, "prepare-commit-msg"),
-    prepareCommitMessageHook(previousHookDirectory, reviewCommand),
-  );
-  await writeHook(
-    path.join(hooksPath, "pre-push"),
-    prePushHook(previousHookDirectory, reviewCommand),
-  );
-  await writePrivateJson(statePath, state);
-  await gitAt(resolved.root, [
-    "config",
-    "--local",
-    "core.hooksPath",
-    hooksPath,
-  ]);
-  await registerRepository(homeDir, resolved.root);
-
-  return {
-    repository: true,
-    enabled: true,
-    root: resolved.root,
-    managedHooksPath: hooksPath,
-    previousHooksPath,
-    command: reviewCommand,
-    message: "Review trace hooks are enabled for this repository.",
-  };
-}
-
-export async function repairTraceRepository(input: {
-  cwd: string;
-  scope: TraceScope;
-  reviewCommand?: string | TraceCommand;
-}): Promise<TraceRepositoryStatus> {
-  return enableTraceRepository(input);
-}
-
-export async function disableTraceRepository(input: {
-  cwd: string;
-  scope: TraceScope;
+  homeDir: string;
 }): Promise<TraceRepositoryStatus> {
   const resolved = await resolveRepository(input.cwd);
 
@@ -210,7 +83,7 @@ export async function disableTraceRepository(input: {
   }
 
   await rm(stateDir, { recursive: true, force: true });
-  await unregisterRepository(input.scope.homeDir, resolved.root);
+  await unregisterRepository(input.homeDir, resolved.root);
 
   return {
     repository: true,
@@ -220,7 +93,7 @@ export async function disableTraceRepository(input: {
   };
 }
 
-export async function traceRepositoryStatus(
+async function traceRepositoryStatus(
   cwd: string,
 ): Promise<TraceRepositoryStatus> {
   const resolved = await resolveRepository(cwd);
@@ -265,10 +138,10 @@ export async function traceRepositoryStatus(
 
 /** Disables registered hooks, preserving other live executables when scoped. */
 export async function disableAllTraceRepositories(
-  scope: TraceScope,
+  homeDir: string,
   expectedCommand?: string,
 ): Promise<{ disabled: string[]; kept: string[] }> {
-  const registry = await readRegistry(scope.homeDir);
+  const registry = await readRegistry(homeDir);
   const disabled: string[] = [];
   const kept: string[] = [];
 
@@ -287,7 +160,7 @@ export async function disableAllTraceRepositories(
       }
     }
 
-    const result = await disableTraceRepository({ cwd: root, scope }).catch(
+    const result = await disableTraceRepository({ cwd: root, homeDir }).catch(
       () => null,
     );
 
@@ -333,43 +206,6 @@ async function configuredHooksPath(
   };
 }
 
-function resolveHooksPath(root: string, hooksPath: string): string {
-  return path.isAbsolute(hooksPath) ? hooksPath : path.resolve(root, hooksPath);
-}
-
-function previousHookSetup(pathValue: string, name: string): string {
-  if (path.isAbsolute(pathValue)) {
-    return `previous=${shellQuote(path.join(pathValue, name))}`;
-  }
-
-  return [
-    'root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"',
-    `previous="$root"/${shellQuote(path.join(pathValue, name))}`,
-  ].join("\n");
-}
-
-function prepareCommitMessageHook(
-  previousPath: string,
-  reviewCommand: string,
-): string {
-  const previous = previousHookSetup(previousPath, "prepare-commit-msg");
-  const review = reviewCommand;
-
-  return `#!/bin/sh\n${previous}\nif [ -x "$previous" ]; then\n  "$previous" "$@" || exit $?\nfi\n${review} trace git-hook prepare-commit-msg "$@" || true\nexit 0\n`;
-}
-
-function prePushHook(previousPath: string, reviewCommand: string): string {
-  const previous = previousHookSetup(previousPath, "pre-push");
-  const review = reviewCommand;
-
-  return `#!/bin/sh\n${previous}\ntmp="$(mktemp "\${TMPDIR:-/tmp}/review-pre-push.XXXXXX")" || exit 0\ntrap 'rm -f "$tmp"' EXIT HUP INT TERM\ncat > "$tmp"\nif [ -x "$previous" ]; then\n  "$previous" "$@" < "$tmp" || exit $?\nfi\n${review} trace git-hook pre-push "$@" < "$tmp" || true\nexit 0\n`;
-}
-
-async function writeHook(filePath: string, contents: string): Promise<void> {
-  await writeFile(filePath, contents, { mode: 0o755 });
-  await chmod(filePath, 0o755);
-}
-
 async function readState(
   filePath: string,
 ): Promise<RepositoryHookState | null> {
@@ -386,7 +222,7 @@ async function readState(
 
 async function writePrivateJson(
   filePath: string,
-  value: RepositoryHookState | string[],
+  value: string[],
 ): Promise<void> {
   await writeFileAtomicAsync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
     encoding: "utf8",
@@ -396,11 +232,6 @@ async function writePrivateJson(
 
 function registryPath(homeDir: string): string {
   return path.join(homeDir, ".config", "dev-trace", "repositories.json");
-}
-
-/** Returns the registered repository roots; never scans repositories or changes hooks. */
-export function listTraceRepositoryRoots(homeDir?: string): Promise<string[]> {
-  return readRegistry(homeDir ?? traceHomeDir());
 }
 
 async function readRegistry(homeDir: string): Promise<string[]> {
@@ -413,16 +244,6 @@ async function readRegistry(homeDir: string): Promise<string[]> {
   } catch {
     return [];
   }
-}
-
-async function registerRepository(
-  homeDir: string,
-  root: string,
-): Promise<void> {
-  const current = await readRegistry(homeDir);
-  await writePrivateJson(registryPath(homeDir), [
-    ...new Set([...current, root]),
-  ]);
 }
 
 async function unregisterRepository(

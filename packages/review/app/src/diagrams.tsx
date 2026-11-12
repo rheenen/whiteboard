@@ -43,8 +43,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { DiagramCommentScope, DiagramPartPin } from "./board-comments";
 import { useReviewDebugSettings } from "./debug-settings";
 import { DiagramHeader } from "./diagram-header";
+import { useOfferPartComment } from "./diagram-part-comment";
 import { diagramStyles } from "./diagram-styles";
 import { hasTextSelectionWithin } from "./diagram-text-selection";
 import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour";
@@ -63,7 +65,6 @@ import {
 } from "./sequence-layout";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 import { useDiagramSelection } from "./use-diagram-selection";
 
 type SequenceParticipantNodeData = {
@@ -324,10 +325,12 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
     figureRef,
   } = useDiagramSelection(tour, tourOpen);
 
+  const offerComment = useOfferPartComment(tour);
+
   const openTour = useCallback(
     (anchor?: string) => {
       if (anchor) {
-        captureUiEvent(session, "peek_opened", { via: "diagram" });
+        offerComment(anchor);
       }
 
       if (anchor && selectInline(anchor)) return;
@@ -336,15 +339,19 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
 
       if (!nextAnchor) return;
 
-      if (!tourOpen) {
-        captureUiEvent(session, "tour_started", { steps: tour.stops.length });
-      }
-
       panelStore
         .getState()
         .openOverlayTour({ tourId: tour.id, kind: "sequence" }, nextAnchor);
     },
-    [panelStore, session, tour, tourAnchor, tourOpen, selectInline],
+    [
+      panelStore,
+      session,
+      tour,
+      tourAnchor,
+      tourOpen,
+      selectInline,
+      offerComment,
+    ],
   );
 
   const { closeOverlayTour: closeTour, moveOverlayTour: changeTourAnchor } =
@@ -353,7 +360,7 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
   const { portalTarget } = useDiagramTourShell(tourOpen, closeTour);
 
   return (
-    <>
+    <DiagramCommentScope.Provider value={id}>
       <SequenceDiagramFigure
         sequence={sequence}
         theme={theme}
@@ -383,7 +390,7 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
             portalTarget,
           )
         : null}
-    </>
+    </DiagramCommentScope.Provider>
   );
 }
 
@@ -914,6 +921,7 @@ function SequenceMessageEdge(
           >
             {data.message.label}
           </span>
+          <DiagramPartPin partId={data.message.id} label={data.message.label} />
         </div>
       </EdgeLabelRenderer>
     </>

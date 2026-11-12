@@ -4,8 +4,8 @@ import { type RefObject, useLayoutEffect, useRef, useState } from "react";
  * How far the page bar has folded to fit its width, one step each:
  * 1. the switcher's "· N of M" (or a top board's "N boards") hides before
  *    any title or name is shortened; then the titles truncate, in CSS;
- * 2. Discord and the bug report move into "⋯";
- * 3. Share moves there too.
+ * 2. Discord moves into "⋯";
+ * 3. A `share`-marked item moves there too; the bar has none at present.
  */
 export type PageBarFold = 0 | 1 | 2 | 3;
 

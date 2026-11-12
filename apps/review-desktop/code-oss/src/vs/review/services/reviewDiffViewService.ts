@@ -43,7 +43,6 @@ import { createStructuralDiffEditors } from "./reviewStructuralDiff.js";
 import { StructuralViewedState } from "./reviewStructuralViewed.js";
 import { StructuralDiffSession, type StructuralSessionChange } from "./reviewStructuralDiffSession.js";
 import type { StructuralDiffStream } from "./reviewStructuralDiffClient.js";
-import { IReviewTelemetryService } from "./reviewTelemetryService.js";
 
 export interface ReviewDiffViewSource {
 	load(scope?: ReviewCommitScope, lens?: ReviewDiffLens): Promise<{
@@ -78,7 +77,6 @@ export class ReviewDiffViewService extends Disposable {
 		@IInstantiationService
 		private readonly instantiationService: IInstantiationService,
 		@IStorageService storage: IStorageService,
-		@IReviewTelemetryService private readonly telemetry: IReviewTelemetryService,
 	) {
 		super();
 		this.viewStates = new ReviewDiffViewStateStorage(storage);
@@ -109,12 +107,7 @@ export class ReviewDiffViewService extends Disposable {
 		}
 		const session = new StructuralDiffSession(client);
 		this.sessions.set(key, { session, revision });
-		void session.start().then(() => {
-			const failure = session.failure();
-			if (failure) { this.telemetry.capture("diff_failed", failure); return; }
-			const timing = session.loadTiming();
-			if (timing) this.telemetry.capture("diff_loaded", { first_file_ms: timing.firstFileMs, files: timing.files, update_errors: timing.updateErrors, ...timing.updatesMs !== undefined && { updates_ms: timing.updatesMs } });
-		});
+		void session.start();
 		return session;
 	}
 

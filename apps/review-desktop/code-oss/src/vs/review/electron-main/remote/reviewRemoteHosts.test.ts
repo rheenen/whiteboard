@@ -284,8 +284,8 @@ test("Install on a declined host stores the agreement, installs and attaches", a
 			return INSTALLED;
 		},
 		script: async () => INSTALL_SCRIPT,
-		origin: () => "https://install.dev.fast",
-		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://install.dev.fast/x", sha256: INSTALLED_SHA256 }),
+		origin: () => "https://releases.example",
+		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://releases.example/x", sha256: INSTALLED_SHA256 }),
 	};
 	const { manager, sentUntil } = await managerFor(
 		t,
@@ -321,8 +321,8 @@ test("two hosts asking at once are asked one after the other", async (t) => {
 		},
 		run: async () => INSTALLED,
 		script: async () => INSTALL_SCRIPT,
-		origin: () => "https://install.dev.fast",
-		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://install.dev.fast/x", sha256: INSTALLED_SHA256 }),
+		origin: () => "https://releases.example",
+		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://releases.example/x", sha256: INSTALLED_SHA256 }),
 	};
 	const other = { code: 0, stdout: attachOutput(41234, "remote-token", { serverId: "wb-test-b-server" }) };
 	const { manager, sentUntil } = await managerFor(t, { "wb-test-a": {}, "wb-test-b": { attach: other } }, undefined, undefined, flow);
@@ -354,8 +354,8 @@ async function promptingFlow(t: test.TestContext) {
 			return INSTALLED;
 		},
 		script: async () => INSTALL_SCRIPT,
-		origin: () => "https://install.dev.fast",
-		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://install.dev.fast/x", sha256: INSTALLED_SHA256 }),
+		origin: () => "https://releases.example",
+		artifact: async (target, version) => ({ name: `whiteboard-remote-${version}-${target}.tar.xz`, url: "https://releases.example/x", sha256: INSTALLED_SHA256 }),
 	};
 	return { flow, asked, runs, consentFile };
 }

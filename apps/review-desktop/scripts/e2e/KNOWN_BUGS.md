@@ -26,7 +26,7 @@ Status values: `open`, `fix-pr #<n>`, `fixed`, `not-a-bug` (with the reason).
 - Activating the Go extension opens its welcome page over the review — open
 - Peeks and tour stops never offer to show their element in the software map — open
 - A focus request that mounts the Map view loses to its default selection — fixed
-- The Trace view lists retained traces in the order they finish loading — open
+- The Trace view lists retained traces in the order they finish loading — fixed (Trace view removed)
 - Formatting between two dollar amounts shows as raw Markdown — open
 
 ## Template (copy, do not edit)
@@ -181,7 +181,7 @@ Server` cannot help — the captured workspace is never re-read. The fix
 
 ## The Trace view lists retained traces in the order they finish loading
 
-- **Journey:** `canvas-resume` · **Found:** 2026-09-28 · **Status:** open
+- **Journey:** `canvas-resume` · **Found:** 2026-09-28 · **Status:** fixed (the Trace view was removed)
 - **Repro:** create a review with two `trace_quote` blocks that quote two
   different retained traces, open it and open the Trace view's picker.
 - **Expected:** the picker lists the traces in document order and defaults to

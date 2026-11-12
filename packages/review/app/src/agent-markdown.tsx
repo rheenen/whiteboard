@@ -13,7 +13,7 @@ import {
 } from "@dev.fast/whiteboard-document";
 import * as stylex from "@stylexjs/stylex";
 // Deliberately separate from the MDX document pipeline: this renderer walks the
-// mdast of untrusted runtime strings (agent trace message bodies) and never
+// mdast of untrusted runtime strings (agent message bodies) and never
 // evaluates them, whereas MDX compilation produces executable code and must
 // only ever see trusted authored review documents.
 import {

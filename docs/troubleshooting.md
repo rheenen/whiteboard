@@ -13,10 +13,8 @@ Preview builds use `Whiteboard Preview` in place of `Whiteboard`.
 
 ## Report a problem
 
-In a review, select the bug icon in the top bar to report a bug. It can include
-the review, its diff, and a screenshot. You can also search
-[GitHub issues](https://github.com/devdotfast/whiteboard/issues) before opening
-one. Include your app and agent versions, operating system, reproduction steps,
-and exact error text.
+Whiteboard sends no bug or crash reports. To report a problem, open an issue
+with the maintainers of the build you use. Include your app and agent
+versions, operating system, reproduction steps, and exact error text.
 
 For questions, ask on [Discord](https://discord.gg/wYvd2cpMQg).

@@ -41,7 +41,6 @@ import { REVIEW_DESKTOP_CHANNEL } from '../../common/reviewDesktopBootstrap.js';
 import { WHITEBOARD_RELEASES_URL } from '../../common/reviewProtocol.js';
 import { REVIEW_SHOW_RELEASE_NOTES_COMMAND_ID } from '../../common/reviewReleaseNotes.js';
 import { IReviewCanvasEditorTabsService } from '../../services/reviewCanvasEditorTabsService.js';
-import { IReviewTelemetryService } from '../../services/reviewTelemetryService.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../workbench/common/contributions.js';
 import {
 	decideUpdateNotice,
@@ -242,13 +241,12 @@ class ReviewShowReleaseNotesAction extends Action2 {
 		});
 	}
 
-	async run(accessor: ServicesAccessor, version?: unknown, via: unknown = 'command'): Promise<void> {
+	async run(accessor: ServicesAccessor, version?: unknown): Promise<void> {
 		const shown = typeof version === 'string' && version ? version : accessor.get(IProductService).reviewVersion;
 		if (!shown) {
 			await accessor.get(IOpenerService).open(WHITEBOARD_RELEASES_URL, { openExternal: true });
 			return;
 		}
-		accessor.get(IReviewTelemetryService).capture('release_notes_opened', { via: String(via), version: shown });
 		await accessor.get(IReviewCanvasEditorTabsService).openReleaseNotes(shown, true);
 	}
 }

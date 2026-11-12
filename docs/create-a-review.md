@@ -23,6 +23,35 @@ or code link to open its source.
 
 ![A sequence diagram beside the source code for its selected step](assets/diagram-to-code.webp)
 
+## Comment on the review
+
+Select a passage of the whiteboard or lines of code, then choose **Add
+comment**. To comment on a part of a diagram, or on a call in a call tree,
+select the node, message or call and choose **Add comment**. In an expanded
+diagram, you can also select the pencil beside a step. The comment is on the
+code behind that part, or on the diagram when the part has no code.
+
+A comment icon marks each open comment: after its passage, at the corner of
+its block or diagram part, and in the gutter beside its code. Select the icon
+to read the comments there, and to edit, resolve or delete one. The
+**Threads** tab lists every comment above the Ask threads, resolved ones too.
+
+A tool that posts pull request comments can read them without a running
+server:
+
+```sh
+whiteboard comments --review <id> --json
+```
+
+The output is `{"schema": 1, "reviewId", "sessionId", "comments": [...]}`. Each
+comment has a Markdown `body`, its `author`, `resolved`, a `hash` that changes
+when the body or anchor changes, and an `anchor`. A source anchor names the
+repository remote, the `file`, the `side` (`head` or `base`), 1-based
+`fromLine` and `toLine`, and the full `commit`; a document anchor names a
+`blockId` and a `quote`. A comment on a diagram part also has a `part` with
+the diagram's `blockId`, the step's `id` and its `label`. The
+`session_comments_list` MCP tool returns the same comments.
+
 ## Plan and review a stack
 
 When your agent plans work in Whiteboard, it keeps the plan and its changes

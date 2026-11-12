@@ -137,7 +137,6 @@ describe("GET /:id/render", () => {
       undefined,
       undefined,
       undefined,
-      undefined,
       () => true,
       async (request) => {
         requests.push(request);
@@ -226,7 +225,6 @@ describe("session_render", () => {
 
     const app = createReviewApi(
       store,
-      undefined,
       undefined,
       undefined,
       undefined,

@@ -1,8 +1,15 @@
 import { iconStyles } from "@canvas/ui/icon-styles";
-import { ChatIcon, ChevronDownIcon, CopyIcon } from "@canvas/ui/icons";
+import {
+  ChatIcon,
+  ChevronDownIcon,
+  CopyIcon,
+  PencilIcon,
+} from "@canvas/ui/icons";
 import type { AgentSelection } from "@review/agent-selection";
 import type { AskAgentId } from "@review/ask/thread-state";
+import type { CommentPart } from "@review/comment-part";
 import * as stylex from "@stylexjs/stylex";
+import { useMutation } from "@tanstack/react-query";
 import {
   type ReactNode,
   createContext,
@@ -21,6 +28,7 @@ import {
   useAskAgents,
 } from "./ask-agent-picker";
 import { askAnchor } from "./ask-anchor";
+import { useBoardComments } from "./board-comments";
 import { copyAgentContext } from "./copy-agent-context";
 import { useReviewDebugSettings } from "./debug-settings";
 import { useHostPassages } from "./host-passages";
@@ -34,6 +42,7 @@ import { tokens } from "./tokens.stylex";
 import { Button } from "./ui/button";
 import { Shortcut } from "./ui/kbd";
 import { surfaceStyles } from "./ui/surface";
+import { TextArea } from "./ui/text-field";
 
 type Selection = Omit<AgentSelection, "revision"> & {
   anchor?: { x: number; y: number; right?: number };
@@ -45,6 +54,10 @@ type Selection = Omit<AgentSelection, "revision"> & {
   onDismiss?: () => void;
   /** Hides the toolbar; the shortcuts still work. */
   quiet?: boolean;
+  /** The diagram part the selection is the code of, saved with a comment. */
+  part?: CommentPart;
+  /** Opens straight on the comment composer. */
+  compose?: boolean;
 };
 
 type Select = (selection: Selection | null) => void;
@@ -56,6 +69,8 @@ function payloadOf({
   range: _range,
   onDismiss: _onDismiss,
   quiet: _quiet,
+  part: _part,
+  compose: _compose,
   ...payload
 }: Selection) {
   return payload;
@@ -104,6 +119,9 @@ export function AgentSelectionProvider({
   const currentSelection = useRef<Selection | null>(null);
   const [copiedSelection, setCopiedSelection] = useState<string | null>(null);
   const [choosing, setChoosing] = useState(false);
+  // Writing a comment on the selection, in place of its actions.
+  const [commenting, setCommenting] = useState(false);
+  const [draft, setDraft] = useState("");
   const actions = useRef<HTMLDivElement>(null);
   const copying = useRef(false);
   const pointer = useRef<{ x: number; y: number } | null>(null);
@@ -121,6 +139,7 @@ export function AgentSelectionProvider({
   }, []);
 
   const notify = useNotify();
+  const boardComments = useBoardComments();
 
   const select = useCallback<Select>(
     (value) => {
@@ -182,6 +201,8 @@ export function AgentSelectionProvider({
       if (!value || sameBlock) setCopiedSelection(null);
 
       setChoosing(false);
+      setCommenting(Boolean(value?.compose));
+      setDraft("");
       setSelection(value);
     },
     [overlayHost],
@@ -279,8 +300,59 @@ export function AgentSelectionProvider({
     [selection, panels, revision, select, session],
   );
 
+  /** The selection as saved: a passage keeps its place in its block, as
+   * Ask's pins do. */
+  const anchoredPayload = useCallback((value: Selection) => {
+    const payload = payloadOf(value);
+
+    const anchor =
+      payload.target.kind === "text" && value.range && askAnchor(value.range);
+
+    if (payload.target.kind === "text" && anchor)
+      payload.target = { ...payload.target, anchor };
+
+    return payload;
+  }, []);
+
+  const saveComment = useMutation({
+    mutationFn: async (input: { selection: Selection; body: string }) => {
+      const response = await session.fetch("/comments", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          selection: anchoredPayload(input.selection),
+          body: input.body,
+          ...(input.selection.part && { part: input.selection.part }),
+        }),
+      });
+
+      if (!response.ok) throw new Error("Comment not saved");
+    },
+    onSuccess: () => {
+      select(null);
+      boardComments?.refresh();
+      notify({ kind: "success", text: "Comment saved.", closeAfterMs: 3_000 });
+    },
+    onError: () =>
+      notify({
+        kind: "error",
+        text: "Could not save the comment. Please try again.",
+      }),
+  });
+
+  const comment = useCallback(() => {
+    const body = draft.trim();
+
+    if (!selection || !body || saveComment.isPending) return;
+
+    saveComment.mutate({ selection, body });
+  }, [draft, selection, saveComment]);
+
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
+      // The composer has the keyboard; Escape still closes it.
+      if (commenting && event.key !== "Escape") return;
+
       if (
         selection &&
         copyRef &&
@@ -325,7 +397,7 @@ export function AgentSelectionProvider({
     window.addEventListener("keydown", keydown, true);
 
     return () => window.removeEventListener("keydown", keydown, true);
-  }, [selection, copy, copyRef, select, askAgent, ask]);
+  }, [selection, copy, copyRef, select, askAgent, ask, commenting]);
 
   // A host's own actions are for document text with a place in a block.
   const text =
@@ -347,6 +419,9 @@ export function AgentSelectionProvider({
 
       if (actions.current && path.includes(actions.current)) return;
 
+      // Scrolling keeps a comment being written.
+      if (event.type === "wheel" && commenting) return;
+
       if (
         event.type === "pointerdown" &&
         selection.target.kind === "block" &&
@@ -365,7 +440,7 @@ export function AgentSelectionProvider({
       window.removeEventListener("pointerdown", dismiss, true);
       window.removeEventListener("wheel", dismiss, true);
     };
-  }, [selection, select]);
+  }, [selection, select, commenting]);
 
   return (
     <SelectionContext.Provider value={select}>
@@ -374,7 +449,7 @@ export function AgentSelectionProvider({
       {overlayHost &&
         selection &&
         !selection.quiet &&
-        (asking || copyRef || passage) &&
+        (asking || copyRef || passage || panels) &&
         copiedSelection !== selectionKey(selection) &&
         createPortal(
           // The toolbar starts at the selection, after a lead that
@@ -392,14 +467,69 @@ export function AgentSelectionProvider({
             />
             <div
               ref={actions}
+              data-agent-selection-actions=""
               {...stylex.props(surfaceStyles.popover, styles.actions)}
-              onMouseDown={(event) => event.preventDefault()}
+              onMouseDown={(event) => {
+                // The composer takes focus; the actions keep the selection.
+                if (!(event.target instanceof HTMLTextAreaElement))
+                  event.preventDefault();
+              }}
             >
-              {askAgents && askAgent ? (
+              {commenting ? (
+                <form
+                  {...stylex.props(styles.composer)}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    comment();
+                  }}
+                >
+                  <TextArea
+                    aria-label="Comment"
+                    placeholder="Add a comment…"
+                    autoFocus
+                    rows={3}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        (event.metaKey || event.ctrlKey)
+                      ) {
+                        event.preventDefault();
+                        comment();
+                      }
+                    }}
+                    xstyle={styles.draft}
+                  />
+                  <span {...stylex.props(styles.composerActions)}>
+                    <Button variant="ghost" onClick={() => select(null)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      type="submit"
+                      loading={saveComment.isPending}
+                      aria-keyshortcuts="Meta+Enter"
+                    >
+                      <span>Comment</span>
+                      <Shortcut aria-hidden="true" xstyle={styles.key}>
+                        ⌘↵
+                      </Shortcut>
+                    </Button>
+                  </span>
+                </form>
+              ) : null}
+              {!commenting && panels ? (
+                <Button variant="primary" onClick={() => setCommenting(true)}>
+                  <PencilIcon xstyle={iconStyles.inline} />
+                  <span>Add comment</span>
+                </Button>
+              ) : null}
+              {!commenting && askAgents && askAgent ? (
                 <>
                   <span {...stylex.props(styles.split)}>
                     <Button
-                      variant="primary"
+                      variant="secondary"
                       aria-keyshortcuts="Meta+L"
                       onClick={() => ask()}
                       xstyle={canChooseAgent && styles.splitMain}
@@ -412,7 +542,7 @@ export function AgentSelectionProvider({
                     </Button>
                     {canChooseAgent ? (
                       <Button
-                        variant="primary"
+                        variant="secondary"
                         aria-label="Ask another agent"
                         aria-haspopup="menu"
                         aria-expanded={choosing}
@@ -439,7 +569,7 @@ export function AgentSelectionProvider({
                   ) : null}
                 </>
               ) : null}
-              {passage
+              {!commenting && passage
                 ? passages!.actions!.map((action) => (
                     <Button
                       key={action.label}
@@ -453,7 +583,7 @@ export function AgentSelectionProvider({
                     </Button>
                   ))
                 : null}
-              {copyRef ? (
+              {!commenting && copyRef ? (
                 <Button
                   variant="ghost"
                   aria-keyshortcuts="Meta+Shift+C"
@@ -503,8 +633,21 @@ const styles = stylex.create({
     padding: space.s4,
     whiteSpace: "nowrap",
   },
-  // Ask and its agent menu are one split button; the fill sets it apart from
-  // Copy, so the toolbar needs no divider with or without the menu.
+  composer: {
+    display: "flex",
+    flexDirection: "column",
+    gap: space.s4,
+    width: "320px",
+    whiteSpace: "normal",
+  },
+  draft: { resize: "vertical", minHeight: "64px" },
+  composerActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: space.s4,
+  },
+  // Ask and its agent menu are one split button. Add comment comes first and
+  // is filled; Ask then has a border, and its two halves share one edge.
   split: {
     display: "inline-flex",
   },
@@ -517,7 +660,7 @@ const styles = stylex.create({
     padding: 0,
     borderTopLeftRadius: 0,
     borderBottomLeftRadius: 0,
-    boxShadow: `inset 1px 0 0 color-mix(in srgb, ${tokens.onAccent} 28%, transparent)`,
+    borderLeftWidth: 0,
   },
   chevron: {
     transition: {

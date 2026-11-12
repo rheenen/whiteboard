@@ -274,6 +274,14 @@ export function installFailureText(alias: string, version: string, step: Install
 	return plain(`Installing Whiteboard ${version} on ${alias} failed${what}: ${said ? said[2] : message}`);
 }
 
+/** Turns sharing and usage data off in the attach's environment. This build
+ * has neither, but a Whiteboard installed on the host from elsewhere may: its
+ * attach records sharing as off, and it sends no usage data. A runtime that
+ * predates a variable ignores it. */
+export function withServicesOff(script: string): string {
+	return `DEV_REVIEW_DESKTOP_SHARING=off\nDEV_REVIEW_SHARING_DISABLED=1\nDEV_FAST_REVIEW_TELEMETRY_DISABLED=1\nDO_NOT_TRACK=1\nexport DEV_REVIEW_DESKTOP_SHARING DEV_REVIEW_SHARING_DISABLED DEV_FAST_REVIEW_TELEMETRY_DISABLED DO_NOT_TRACK\n${script}`;
+}
+
 export interface ReviewRemoteHostOptions {
 	readonly session: ReviewSshSession;
 	readonly spawn: SpawnSsh;
@@ -283,7 +291,6 @@ export interface ReviewRemoteHostOptions {
 	groups?(): Promise<readonly string[]>;
 	freePort(): Promise<number>;
 	report(host: ReviewGatewayHost): void;
-	capture?(name: string, properties: Record<string, string | number | boolean>): void;
 	log(message: string): void;
 	readonly clock?: ReviewRemoteClock;
 	readonly timeouts?: Partial<typeof REVIEW_REMOTE_TIMEOUTS>;
@@ -296,7 +303,6 @@ export class ReviewRemoteHost {
 	private readonly clock: ReviewRemoteClock;
 	private readonly timeouts: typeof REVIEW_REMOTE_TIMEOUTS;
 	private reported: ReviewGatewayHost;
-	private capturedOutcome: string | undefined;
 	private generation = 0;
 	private master: SshChildProcess | undefined;
 	private readonly closing = new Map<SshChildProcess, Promise<void>>();
@@ -487,23 +493,10 @@ export class ReviewRemoteHost {
 	private set(state: ReviewGatewayHost): void {
 		if (JSON.stringify(state) === JSON.stringify(this.reported)) return;
 		this.reported = state;
-		this.captureOutcome(state);
 		this.options.log(
 			`${this.alias}: ${state.endpoint ? `online through ${state.endpoint.url}` : state.problem ? `${state.problem.state}: ${state.problem.detail}` : "connecting"}`,
 		);
 		this.options.report(state);
-	}
-
-	// Once per change of outcome, so a host retrying while down reports once.
-	private captureOutcome(state: ReviewGatewayHost): void {
-		const outcome = state.endpoint ? "online" : state.problem?.state;
-		if (!outcome || outcome === this.capturedOutcome) return;
-		this.capturedOutcome = outcome;
-		this.options.capture?.("remote_host_connected", {
-			ok: outcome === "online",
-			...(state.problem && { problem: state.problem.state.replaceAll("-", "_") }),
-			direct: this.direct,
-		});
 	}
 
 	private async connect(): Promise<void> {
@@ -717,10 +710,6 @@ export class ReviewRemoteHost {
 		const abort = new AbortController();
 		this.installing = abort;
 		let step: InstallStep = "preparing";
-		const started = this.clock.now();
-		// A version already present is only checked, not installed.
-		const captureInstalled = (ok: boolean) =>
-			!present && this.options.capture?.("remote_host_installed", { ok, target, duration_ms: this.clock.now() - started });
 		if (!present) this.set({ alias: this.alias, installing: { step } });
 		try {
 			const path = await flow.run({
@@ -740,11 +729,9 @@ export class ReviewRemoteHost {
 					this.set({ alias: this.alias, installing: { step } });
 				},
 			});
-			captureInstalled(true);
 			return { path };
 		} catch (error) {
 			if (stale()) return undefined;
-			captureInstalled(false);
 			const message = (error as Error).message;
 			// ssh exits 255 when the connection drops.
 			if (/\bexit 255\b/.test(message) || !this.master || gone(this.master)) {
@@ -803,7 +790,7 @@ export class ReviewRemoteHost {
 
 	private async attach(env: NodeJS.ProcessEnv, script: AttachScript): Promise<ReviewRemoteAttach> {
 		const groups = (await this.options.groups?.()) ?? [];
-		const result = await this.run(sshExecArgs(this.options.session, env), this.timeouts.attach, script(groups));
+		const result = await this.run(sshExecArgs(this.options.session, env), this.timeouts.attach, withServicesOff(script(groups)));
 		const parsed = parseRemoteAttach(result.stdout);
 		if (parsed && "attach" in parsed) {
 			const { incompatibleRunning, replaced } = parsed.attach;

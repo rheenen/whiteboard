@@ -56,17 +56,13 @@ import {
 import type { AskThreadHooks } from "@review/ask/thread.js";
 import type { AskThreads } from "@review/ask/threads.js";
 import { watchAskThreads } from "@review/ask/watch.js";
+import { commentPartSchema } from "@review/comment-part.js";
 import { fuzzyRank } from "@review/fuzzy-match.js";
 import { resolveReviewStackLayers } from "@review/review-stack.js";
 import { readBoundedRequestJson } from "@review/server/hono-http.js";
 import { HttpJsonError } from "@review/server/http-json.js";
-import {
-  type RemoteShare,
-  type SharingHostEvents,
-  mountSharingHost,
-} from "@review/sharing/host.js";
+import { type RemoteShare, mountSharingHost } from "@review/sharing/host.js";
 import { forgetSharedCommits } from "@review/sharing/repository.js";
-import type { ReviewSessionAgent } from "@review/ui-telemetry-events.js";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 
@@ -78,6 +74,7 @@ import {
 } from "./animation-render.js";
 import type { AskRecord } from "./ask-history.js";
 import { authoringTools } from "./authoring-tools.js";
+import { commentAnchor, commentAuthor } from "./comment-anchor.js";
 import { documentText } from "./document-text.js";
 import { instructionsQuerySchema, renderInstructions } from "./instructions.js";
 import type { LocalReviewData } from "./local-data.js";
@@ -90,9 +87,8 @@ import {
 import {
   REVIEW_PERSON_HEADER,
   REVIEW_THREAD_HEADER,
-  type ReviewRequestVia,
-  reviewRequestOrigin,
 } from "./request-origin.js";
+import { COMMENT_BODY_LIMIT } from "./review-comments.js";
 import {
   legacyModeSchema,
   progressUpdateSchema,
@@ -106,7 +102,6 @@ import {
   commandSchema,
   inspectSnapshot,
 } from "./store.js";
-import { listPinnedTraces, readStoredTrace } from "./traces.js";
 
 export interface AskHost {
   threads: AskThreads;
@@ -167,18 +162,10 @@ export interface AuthoringCapabilities {
   softwareMapEnabled: boolean;
 }
 
-/**
- * What the host reports about reviews, for telemetry. `onReviewCreated` fires
- * again for a replayed create command; consumers dedupe by review id.
- */
+/** What the host plugs into the review API. */
 export interface ReviewApiHooks {
-  onReviewCreated?: (event: {
-    reviewId: string;
-    blocks: number;
-    via: ReviewRequestVia;
-    agentKind?: ReviewSessionAgent;
-  }) => void;
-  sharing?: SharingHostEvents & { remoteShare?: RemoteShare };
+  /** Prepares a remote board's `.whiteboard` file on its host. */
+  sharing?: { remoteShare?: RemoteShare };
 }
 
 /** A person's save carries the whole board, which edits one at a time can
@@ -197,7 +184,7 @@ export function createReviewApi(
     reviewId: string;
     title: string;
   }) => Promise<{ softwareMapEnabled: boolean }>,
-  /** Desktop's: share sign-in and imports. */
+  /** Desktop's: `.whiteboard` file import. */
   sharing = false,
   capabilities: () =>
     | AuthoringCapabilities
@@ -205,8 +192,6 @@ export function createReviewApi(
     desktopAvailable: Boolean(open),
     softwareMapEnabled: false,
   }),
-  // Read per request: capture can change from outside this server.
-  traceEnabled: () => Promise<boolean> = async () => false,
   /** Which server this is, for whiteboard_status. */
   status: () => JsonObject = () => ({}),
   hooks: ReviewApiHooks = {},
@@ -325,30 +310,19 @@ export function createReviewApi(
 
   app.get("/", (context) => context.json(catalog()));
 
-  app.get("/feedback-eligibility", (context) =>
-    context.json({ eligible: store.feedbackEligible() }),
-  );
-
   // Server-owned state only: asking the Desktop canvas would let a stalled
   // renderer block tool listing and the first instructions call.
-  const instructionContext = async () => ({
-    traceEnabled: await traceEnabled(),
+  const instructionContext = () => ({
     animationsEnabled: animationsEnabled(),
   });
 
   app.get("/authoring", async (context) => {
-    const instructions = await instructionContext();
-
-    return context.json(
-      authoringTools(instructions.traceEnabled, instructions.animationsEnabled),
-    );
+    return context.json(authoringTools(animationsEnabled()));
   });
   app.get("/instructions", async (context) => {
     const { topic } = instructionsQuerySchema.parse(context.req.query());
 
-    return context.json(
-      await renderInstructions(topic, await instructionContext()),
-    );
+    return context.json(await renderInstructions(topic, instructionContext()));
   });
   app.get("/:id/progress", async (context) => {
     if (!data) throw new ReviewInputError("Source data is unavailable.", 409);
@@ -801,46 +775,6 @@ export function createReviewApi(
   });
 
   if (data) {
-    const traceQuery = readQuerySchemas.maps.extend({
-      storage: z.enum(["s3", "hosted"]).optional(),
-      trace: z.string().min(1).optional(),
-    });
-
-    // Traces are stored beside the review's own repository.
-    const tracePins = async (id: string, version?: number) => {
-      const snapshot = readReview(id, version);
-
-      return snapshot.pins ?? (await data.documentPins(snapshot));
-    };
-
-    app.get("/:id/agent-traces", async (context) => {
-      const query = traceQuery.parse(context.req.query());
-      const pins = await tracePins(context.req.param("id"), query.version);
-
-      return context.json(
-        await listPinnedTraces(
-          store.repositoryPath(pins.repositoryId),
-          pins,
-          query.storage,
-        ),
-      );
-    });
-    app.get("/:id/agent-traces/:sessionId", async (context) => {
-      const query = traceQuery.parse(context.req.query());
-      const pins = await tracePins(context.req.param("id"), query.version);
-
-      const result = await readStoredTrace(
-        store.repositoryPath(pins.repositoryId),
-        context.req.param("sessionId"),
-        query.trace,
-        query.storage,
-      );
-
-      if (!result.ok)
-        return context.json({ ok: false, error: result.error }, result.status);
-
-      return context.json(result);
-    });
     app.post("/:id/navigator", writable, async (context) => {
       const input = readQuerySchemas.file
         .omit({ side: true })
@@ -1243,6 +1177,115 @@ export function createReviewApi(
       "",
     ].join("\n");
   }
+
+  const commentInputSchema = z.strictObject({
+    selection: AgentSelectionSchema,
+    body: z.string().trim().min(1).max(COMMENT_BODY_LIMIT),
+    parentId: z.string().max(200).optional(),
+    /** The diagram part the selection is the code of. */
+    part: commentPartSchema.optional(),
+  });
+
+  const commentChangeSchema = z
+    .strictObject({
+      body: z.string().trim().min(1).max(COMMENT_BODY_LIMIT).optional(),
+      resolved: z.boolean().optional(),
+    })
+    .refine(
+      (change) => change.body !== undefined || change.resolved !== undefined,
+      "Nothing to change.",
+    );
+
+  /** The reviewer's comments on a board, for the sidebar and PR tools. */
+  app.get("/:id/comments", (context) => {
+    const reviewId = context.req.param("id");
+
+    readReview(reviewId);
+
+    const read = () => ({ reviewId, comments: store.comments.list(reviewId) });
+
+    if (context.req.query("watch") !== undefined) {
+      // Sent again only when it reads differently.
+      let sent = "";
+
+      return watch(
+        () => {
+          const line = JSON.stringify(read());
+
+          if (line === sent) return [];
+          sent = line;
+
+          return [line];
+        },
+        (notify) => store.comments.subscribe(notify),
+      );
+    }
+
+    return context.json(read());
+  });
+
+  app.post("/:id/comments", writable, async (context) => {
+    const reviewId = context.req.param("id");
+
+    const input = commentInputSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    if (
+      input.selection.apiSource &&
+      input.selection.apiSource.reviewId !== reviewId
+    )
+      throw new ReviewInputError("Selection belongs to another review.");
+
+    const snapshot = readReview(reviewId, input.selection.apiSource?.version);
+
+    const comment = store.comments.add({
+      reviewId,
+      body: input.body,
+      author: await commentAuthor(store, snapshot),
+      anchor: await commentAnchor(
+        store,
+        data,
+        snapshot,
+        input.selection,
+        input.part,
+      ),
+      title: input.selection.title,
+      selection: input.selection,
+      version: snapshot.version,
+      ...(input.parentId && { parentId: input.parentId }),
+    });
+
+    return context.json(comment);
+  });
+
+  app.patch("/:id/comments/:commentId", writable, async (context) => {
+    const change = commentChangeSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    const comment = store.comments.update(
+      context.req.param("id"),
+      context.req.param("commentId"),
+      change,
+    );
+
+    if (!comment) throw new ReviewInputError("Comment not found.", 404);
+
+    return context.json(comment);
+  });
+
+  app.delete("/:id/comments/:commentId", writable, (context) => {
+    if (
+      !store.comments.delete(
+        context.req.param("id"),
+        context.req.param("commentId"),
+      )
+    )
+      throw new ReviewInputError("Comment not found.", 404);
+
+    return context.json({ ok: true });
+  });
 
   if (ask && data) {
     const projectOf = (reviewId: string) =>
@@ -2296,14 +2339,6 @@ export function createReviewApi(
     }
 
     if (input.operation.type !== "create") return context.json(result);
-
-    // False when an existing review for the same PR came back.
-    if (result.created !== false)
-      hooks.onReviewCreated?.({
-        reviewId: result.reviewId,
-        blocks: store.read(result.reviewId).document.length,
-        ...reviewRequestOrigin(context.req.raw.headers),
-      });
 
     return context.json({
       ...result,

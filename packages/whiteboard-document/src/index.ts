@@ -113,7 +113,9 @@ export {
   sourceReferences,
   stepSources,
   summarizeEdit,
+  TRACE_QUOTES_UNSUPPORTED,
   traceQuoteLink,
+  traceQuoteReferences,
   writableBlockTypes,
 } from "./document.js";
 

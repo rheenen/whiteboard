@@ -10,7 +10,6 @@ import {
 
 import { useReviewSession } from "./host/review-session";
 import { useOptionalReviewPanelStore } from "./review-panel";
-import { captureUiEvent } from "./ui-telemetry";
 
 export type ReviewSubmissionOutcome = "dismissed";
 
@@ -18,11 +17,6 @@ export interface ReviewActionsValue {
   softwareMapEnabled: boolean;
   dismissReview: () => Promise<void>;
   openSoftwareMapElement: (elementPath: string) => void;
-  openTraceSession?: (input: {
-    sessionId: string;
-    trace?: string;
-    eventIndex?: number;
-  }) => void;
 }
 
 export interface ReviewStateValue {
@@ -41,16 +35,10 @@ const ReviewStateContext = createContext<ReviewStateValue | null>(null);
 export function ReviewProvider({
   documentRoute,
   softwareMapEnabled = false,
-  openTraceSession,
   children,
 }: {
   documentRoute?: string;
   softwareMapEnabled?: boolean;
-  openTraceSession?: (input: {
-    sessionId: string;
-    trace?: string;
-    eventIndex?: number;
-  }) => void;
   children: ReactNode;
 }) {
   const session = useReviewSession();
@@ -76,7 +64,6 @@ export function ReviewProvider({
 
   const dismissReview = useCallback(async () => {
     if (!(await review.dismiss())) return;
-    captureUiEvent(session, "review_dismissed", { via: "review_topbar" });
     setSubmissionOutcome("dismissed");
   }, [review, session]);
 
@@ -85,14 +72,8 @@ export function ReviewProvider({
       softwareMapEnabled,
       dismissReview,
       openSoftwareMapElement,
-      openTraceSession,
     }),
-    [
-      dismissReview,
-      openSoftwareMapElement,
-      openTraceSession,
-      softwareMapEnabled,
-    ],
+    [dismissReview, openSoftwareMapElement, softwareMapEnabled],
   );
 
   const state = useMemo<ReviewStateValue>(

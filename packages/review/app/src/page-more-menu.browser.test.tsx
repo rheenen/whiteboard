@@ -1,5 +1,4 @@
 import type {
-  ReviewApiClient,
   ReviewCanvasBridge,
   ReviewMenuRequest,
 } from "@dev.fast/review-protocol";
@@ -7,18 +6,17 @@ import { act } from "react";
 import { type Root, createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { ExportContext } from "./export-context";
 import { CanvasUiContext } from "./host/canvas-ui";
 import { ReviewSessionProvider } from "./host/review-session";
 import { PageMoreMenu } from "./page-more-menu";
 import { ReviewProvider } from "./review-context";
 import { ReviewCornerAction } from "./review-corner-action";
 import { testReviewSession } from "./review-session-test-utils";
-import { SharingContext } from "./share-control";
 
 let root: Root | null = null;
 
-// SAFETY: the menu never calls the client.
-const shareable = { client: {} as ReviewApiClient, reviewId: "r1", version: 3 };
+const exportable = { reviewId: "r1", version: 3 };
 
 /** The last menu the canvas asked the host to show. */
 let menu: Omit<ReviewMenuRequest, "anchor" | "onHide"> | undefined;
@@ -127,7 +125,7 @@ it("keeps the corner's Move to Trash enabled and focused while the move is in fl
   expect(document.activeElement).toBe(button);
 });
 
-it("offers Export file… while the board can be shared, and asks the host to write it", async () => {
+it("offers Export file… and asks the host to write it", async () => {
   const post = vi.fn<ReviewCanvasBridge["post"]>(async () => ({ ok: true }));
   const session = testReviewSession({}, { post });
 
@@ -140,9 +138,9 @@ it("offers Export file… while the board can be shared, and asks the host to wr
       <ReviewSessionProvider session={session}>
         <CanvasUiContext.Provider value={ui}>
           <ReviewProvider>
-            <SharingContext.Provider value={shareable}>
+            <ExportContext.Provider value={exportable}>
               <PageMoreMenu views={[]} onShowView={() => {}} />
-            </SharingContext.Provider>
+            </ExportContext.Provider>
           </ReviewProvider>
         </CanvasUiContext.Provider>
       </ReviewSessionProvider>,

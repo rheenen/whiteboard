@@ -27,6 +27,12 @@ const INSTALLS = new Set<ReviewGatewayHostState["state"]>([
   "not-installed",
 ]);
 
+/** The hand install of `version` from a release base the person serves
+ * themselves (docs/remote-hosts.md); nothing is downloaded from a vendor. */
+export function handInstallCommand(version: string): string {
+  return `curl -fsSL <base>/${version}/remote/install.sh | WHITEBOARD_RELEASES=<base> sh -s -- --version ${version}`;
+}
+
 const INSTALL_STEPS: Record<
   (typeof REVIEW_REMOTE_INSTALL_STEPS)[number],
   string
@@ -129,7 +135,7 @@ export function createGatewayHosts(input: {
       ...(detail !== undefined && { detail }),
       ...(INSTALLS.has(host.status) &&
         host.problem?.state !== "incompatible" && {
-          installCommand: `curl -fsSL https://install.dev.fast/releases/${input.version}/remote/install.sh | sh -s -- --version ${input.version}`,
+          installCommand: handInstallCommand(input.version),
         }),
       ...(host.declined &&
         host.status !== "online" &&

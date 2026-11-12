@@ -13,7 +13,6 @@ export const INSTRUCTION_TOPICS = [
   "authoring",
   "animation",
   "file-lenses",
-  "trace-archaeology",
 ] as const;
 
 export type InstructionTopic = (typeof INSTRUCTION_TOPICS)[number];
@@ -23,7 +22,6 @@ export const instructionsQuerySchema = z.strictObject({
 });
 
 export interface InstructionContext {
-  traceEnabled: boolean;
   animationsEnabled?: boolean;
 }
 
@@ -64,18 +62,7 @@ export async function renderInstructions(
       409,
     );
 
-  if (topic === "trace-archaeology" && !context.traceEnabled)
-    return "Trace capture is off on this machine, so no agent traces are available. It can be turned on in Whiteboard Desktop Settings under Experimental Features.";
-
   if (topic !== "authoring") return read(root, topic);
-
-  const more = [
-    ...(context.traceEnabled
-      ? [
-          '- Why code exists / past agent sessions: `session_get_instructions({topic:"trace-archaeology"})`',
-        ]
-      : []),
-  ];
 
   return [
     await read(root, "authoring"),
@@ -84,11 +71,5 @@ export async function renderInstructions(
       "",
       COMPONENT_EXAMPLE,
     ].join("\n"),
-    ...(context.traceEnabled
-      ? [
-          '## Traces\n\nAt the end, run `whiteboard trace list --session <sessionId> --json`, which covers every commit in the review. If it lists no sessions, there are no traces to quote: skip this step. Otherwise read `session_get_instructions({topic:"trace-archaeology"})` and rewrite as much as possible of the what/why, design, and requirements sections in terms of literal trace quotes from the user.',
-        ]
-      : []),
-    ...(more.length ? [`## More guidance\n\n${more.join("\n")}`] : []),
   ].join("\n\n");
 }

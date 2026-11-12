@@ -16,12 +16,9 @@ import { NativeDialogHandler } from './dialogHandler.js';
 import { DialogService } from '../../../services/dialogs/common/dialogService.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js';
 import { Lazy } from '../../../../base/common/lazy.js';
 import { createNativeAboutDialogDetails } from '../../../../platform/dialogs/electron-browser/dialog.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
-import { appendReviewInstallId } from '../../../../review/common/reviewAboutDialog.js';
-import { REVIEW_DESKTOP_CHANNEL, type ReviewDesktopConnection } from '../../../../review/common/reviewDesktopBootstrap.js';
 
 export class DialogHandlerContribution extends Disposable implements IWorkbenchContribution {
 
@@ -41,7 +38,6 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 		@IProductService private productService: IProductService,
 		@IClipboardService clipboardService: IClipboardService,
 		@INativeHostService private nativeHostService: INativeHostService,
-		@IMainProcessService private mainProcessService: IMainProcessService,
 		@IWorkbenchEnvironmentService private environmentService: IWorkbenchEnvironmentService,
 	) {
 		super();
@@ -91,17 +87,7 @@ export class DialogHandlerContribution extends Disposable implements IWorkbenchC
 
 				// About
 				else {
-					const [osProperties, connection] = await Promise.all([
-						this.nativeHostService.getOSProperties(),
-						this.mainProcessService
-							.getChannel(REVIEW_DESKTOP_CHANNEL)
-							.call<ReviewDesktopConnection>('getConnection')
-							.catch(() => undefined),
-					]);
-					const aboutDialogDetails = appendReviewInstallId(
-						createNativeAboutDialogDetails(this.productService, osProperties),
-						connection?.installationId,
-					);
+					const aboutDialogDetails = createNativeAboutDialogDetails(this.productService, await this.nativeHostService.getOSProperties());
 
 					if (this.useCustomDialog) {
 						await this.browserImpl.value.about(aboutDialogDetails.title, aboutDialogDetails.details, aboutDialogDetails.detailsToCopy);

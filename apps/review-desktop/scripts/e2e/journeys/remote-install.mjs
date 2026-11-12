@@ -664,10 +664,9 @@ async function steps(ctx, until, watch, timings, manifestPath) {
   assert.equal(declined.state, "not-installed", declined.detail);
   assert.equal(declined.declined, true);
 
-  assert.equal(
-    declined.installCommand,
-    `curl -fsSL https://install.dev.fast/releases/${version}/remote/install.sh | sh -s -- --version ${version}`,
-  );
+  // This build downloads nothing from dev.fast; the hand-install line names the version only.
+  assert.doesNotMatch(declined.installCommand, /dev\.fast/);
+  assert.match(declined.installCommand, new RegExp(`--version ${version}`));
   await denySection
     .getByRole("button", { name: `Install ${deny}` })
     .waitFor({ timeout: 30_000 });
@@ -895,10 +894,7 @@ async function steps(ctx, until, watch, timings, manifestPath) {
   const hand = alias("hand");
   const base = releases.url.replace(/\/$/, "");
 
-  const handCommand = declined.installCommand
-    .replaceAll(version, next)
-    .replace("https://install.dev.fast/releases", base)
-    .replace("| sh ", `| WHITEBOARD_RELEASES=${base} sh `);
+  const handCommand = `curl -fsSL ${base}/${next}/remote/install.sh | WHITEBOARD_RELEASES=${base} sh -s -- --version ${next}`;
 
   await onRemote(hand, handCommand, { timeout: 5 * MINUTE });
   assert.equal(await onRemote(hand, "bash -lc 'whiteboard --version'"), next);

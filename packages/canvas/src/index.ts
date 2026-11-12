@@ -96,6 +96,7 @@ export interface BoardSnapshot {
   activity?: BoardActivity | "unknown";
 }
 
+/** @deprecated Trace quotes are retired; boards show a placeholder. */
 export interface BoardTrace {
   label: string;
   events: { id: string; role: string; text: string }[];
@@ -109,7 +110,7 @@ export interface BoardMap {
 export interface BoardViewOptions {
   /** By asset id; read from blob URLs the caller revokes. */
   images?: Record<string, { bytes: Uint8Array<ArrayBuffer>; type: string }>;
-  /** By trace id. */
+  /** @deprecated Ignored: trace quotes are retired and show a placeholder. */
   traces?: Record<string, BoardTrace>;
   /** By map version id. */
   maps?: Record<string, BoardMap>;

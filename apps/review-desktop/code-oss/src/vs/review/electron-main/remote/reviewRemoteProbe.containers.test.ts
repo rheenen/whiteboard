@@ -55,7 +55,7 @@ const sshEnv = (host: Host) => ({ ...process.env, VSCODE_DEV: "1", [REVIEW_SSH_C
 
 const realSsh: SpawnSsh = (args, options) => spawn("ssh", args, options);
 
-const RELEASES = "https://install.dev.fast/";
+const RELEASES = "https://releases.example/";
 
 async function probe(host: Host, releases = RELEASES) {
 	const began = Date.now();

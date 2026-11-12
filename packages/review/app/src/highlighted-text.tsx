@@ -73,12 +73,10 @@ export function HighlightedText({
   );
 }
 
-/** A quoted run of trace text. Scrolling to a quote looks for its class. */
-export function QuoteMark({ children }: { children: ReactNode }) {
+/** A quoted run of text. */
+function QuoteMark({ children }: { children: ReactNode }) {
   return (
-    <mark {...withClass("review-trace-quote-mark", styles.mark)}>
-      {children}
-    </mark>
+    <mark {...withClass("review-quote-mark", styles.mark)}>{children}</mark>
   );
 }
 

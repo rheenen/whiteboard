@@ -40,7 +40,6 @@ import { REVIEW_KEYMAP_SETTING, type ReviewKeymap } from '../../common/reviewCon
 import { REVIEW_DESKTOP_CHANNEL } from '../../common/reviewDesktopBootstrap.js';
 import { setFirstRunReloadPending } from '../../common/reviewFirstRunReload.js';
 import type { ReviewUserConfigImportResult } from '../../node/reviewUserConfigImport.js';
-import { IReviewTelemetryService } from '../../services/reviewTelemetryService.js';
 import { reviewOptionalExtensionCatalog } from '../../node/reviewOptionalExtensionCatalog.js';
 import {
 	installMissingOptionalExtensions,
@@ -99,8 +98,6 @@ const KEYMAP_IDS = Object.values(KEYMAP_EXTENSION_IDS);
 
 const SEEDED_STORAGE_KEY = 'review.curatedExtensions.defaultsApplied.v2';
 
-type ExtensionEnablementTrigger = 'user' | 'keymap' | 'startup_seed';
-
 function isDisabled(disabled: readonly IExtensionIdentifier[], id: string): boolean {
 	return disabled.some(identifier => areSameExtensions(identifier, { id }));
 }
@@ -115,8 +112,6 @@ export async function setCuratedExtensionsEnabled(
 	enablementService: IGlobalExtensionEnablementService,
 	extensionManagementService: IExtensionManagementService,
 	enabledIds: readonly string[],
-	reviewTelemetryService: IReviewTelemetryService,
-	trigger: ExtensionEnablementTrigger = 'user'
 ): Promise<boolean> {
 	const installed = await extensionManagementService.getInstalled();
 	const installedCurated = installed.filter(extension =>
@@ -125,22 +120,9 @@ export async function setCuratedExtensionsEnabled(
 	let changed = false;
 
 	for (const extension of installedCurated) {
-		const extensionId = ALL_CURATED_IDS.find(id => areSameExtensions(extension.identifier, { id }));
-		if (!extensionId) {
-			continue;
-		}
-		let didChange: boolean;
-		if (enabledIds.some(id => areSameExtensions(extension.identifier, { id }))) {
-			didChange = await enablementService.enableExtension(extension.identifier);
-			if (didChange) {
-				reviewTelemetryService.capture('extension_enabled', { extension_id: extensionId, trigger });
-			}
-		} else {
-			didChange = await enablementService.disableExtension(extension.identifier);
-			if (didChange) {
-				reviewTelemetryService.capture('extension_disabled', { extension_id: extensionId, trigger });
-			}
-		}
+		const didChange = enabledIds.some(id => areSameExtensions(extension.identifier, { id }))
+			? await enablementService.enableExtension(extension.identifier)
+			: await enablementService.disableExtension(extension.identifier);
 		changed ||= didChange;
 	}
 	return changed;
@@ -162,7 +144,6 @@ async function applyReviewKeymap(accessor: ServicesAccessor, keymap: ReviewKeyma
 	const enablementService = accessor.get(IGlobalExtensionEnablementService);
 	const commandService = accessor.get(ICommandService);
 	const dialogService = accessor.get(IDialogService);
-	const reviewTelemetryService = accessor.get(IReviewTelemetryService);
 
 	if (configurationService.getValue<ReviewKeymap>(REVIEW_KEYMAP_SETTING) === keymap) {
 		return;
@@ -174,12 +155,6 @@ async function applyReviewKeymap(accessor: ServicesAccessor, keymap: ReviewKeyma
 		const didChange = candidate === keymap
 			? await enablementService.enableExtension({ id })
 			: await enablementService.disableExtension({ id });
-		if (didChange) {
-			reviewTelemetryService.capture(candidate === keymap ? 'extension_enabled' : 'extension_disabled', {
-				extension_id: id,
-				trigger: 'keymap'
-			});
-		}
 		changed ||= didChange;
 	}
 	if (!changed) {
@@ -196,7 +171,6 @@ async function applyReviewKeymap(accessor: ServicesAccessor, keymap: ReviewKeyma
 		cancelButton: localize('review.keymap.reloadLater', "Later"),
 	});
 	if (reload.confirmed) {
-		await reviewTelemetryService.flush();
 		await commandService.executeCommand('workbench.action.reloadWindow');
 	}
 }
@@ -266,7 +240,6 @@ class ManageCuratedExtensionsAction extends Action2 {
 		const progressService = accessor.get(IProgressService);
 		const mainProcessService = accessor.get(IMainProcessService);
 		const logService = accessor.get(ILogService);
-		const reviewTelemetryService = accessor.get(IReviewTelemetryService);
 
 		let installed = await extensionManagementService.getInstalled();
 
@@ -375,16 +348,8 @@ class ManageCuratedExtensionsAction extends Action2 {
 								donotIncludePack: true,
 								donotCheckDependents: true
 							});
-							const extensionId = ALL_CURATED_IDS.find(id => areSameExtensions(extension.identifier, { id }));
-							if (extensionId) {
-								reviewTelemetryService.capture('extension_uninstalled', {
-									extension_id: extensionId,
-									trigger: 'user'
-								});
-							}
 						}
 						if (userMembers.length > 0) {
-							await reviewTelemetryService.flush();
 							await commandService.executeCommand('workbench.action.reloadWindow');
 						}
 					} catch (error) {
@@ -448,27 +413,7 @@ class ManageCuratedExtensionsAction extends Action2 {
 				rollback: extension => extensionManagementService.uninstall(extension, {
 					donotIncludePack: true,
 					donotCheckDependents: true
-				}),
-				onInstalled: (extensionId, trigger, durationMs) => {
-					reviewTelemetryService.capture('extension_installed', {
-						extension_id: extensionId,
-						trigger,
-						duration_ms: durationMs
-					});
-				},
-				onInstallFailed: (extensionId, trigger, phase) => {
-					reviewTelemetryService.capture('extension_install_failed', {
-						extension_id: extensionId,
-						trigger,
-						phase
-					});
-				},
-				onRolledBack: extensionId => {
-					reviewTelemetryService.capture('extension_uninstalled', {
-						extension_id: extensionId,
-						trigger: 'rollback'
-					});
-				}
+				})
 			}, 'user'));
 		} catch (error) {
 			if (error instanceof OptionalExtensionInstallError) {
@@ -512,15 +457,12 @@ class ManageCuratedExtensionsAction extends Action2 {
 			enablementService,
 			extensionManagementService,
 			enabledIds,
-			reviewTelemetryService,
-			'user'
 		);
 		const keymapChanged = configurationService.getValue<ReviewKeymap>(REVIEW_KEYMAP_SETTING) !== keymap;
 		if (keymapChanged) {
 			await configurationService.updateValue(REVIEW_KEYMAP_SETTING, keymap, ConfigurationTarget.USER);
 		}
 		if (newInstalls.length > 0 || enablementChanged || keymapChanged) {
-			await reviewTelemetryService.flush();
 			await commandService.executeCommand('workbench.action.reloadWindow');
 		}
 	}
@@ -629,7 +571,6 @@ class CuratedExtensionDefaults implements IWorkbenchContribution {
 		@IGlobalExtensionEnablementService enablementService: IGlobalExtensionEnablementService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@ICommandService commandService: ICommandService,
-		@IReviewTelemetryService reviewTelemetryService: IReviewTelemetryService,
 	) {
 		const alreadySeeded = storageService.getBoolean(SEEDED_STORAGE_KEY, StorageScope.APPLICATION, false);
 		const keymap = configurationService.getValue<ReviewKeymap>(REVIEW_KEYMAP_SETTING);
@@ -646,30 +587,22 @@ class CuratedExtensionDefaults implements IWorkbenchContribution {
 		if (!alreadySeeded) {
 			storageService.store(SEEDED_STORAGE_KEY, true, StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
-		void this.applyKeymapDefault(keymap, enablementService, commandService, reviewTelemetryService);
+		void this.applyKeymapDefault(keymap, enablementService, commandService);
 	}
 
 	private async applyKeymapDefault(
 		keymap: ReviewKeymap,
 		enablementService: IGlobalExtensionEnablementService,
 		commandService: ICommandService,
-		reviewTelemetryService: IReviewTelemetryService,
 	): Promise<void> {
 		let changed = false;
 		for (const [candidate, id] of Object.entries(KEYMAP_EXTENSION_IDS) as [Exclude<ReviewKeymap, 'none'>, string][]) {
 			const didChange = candidate === keymap
 				? await enablementService.enableExtension({ id })
 				: await enablementService.disableExtension({ id });
-			if (didChange) {
-				reviewTelemetryService.capture(candidate === keymap ? 'extension_enabled' : 'extension_disabled', {
-					extension_id: id,
-					trigger: 'startup_seed'
-				});
-			}
 			changed ||= didChange;
 		}
 		if (changed) {
-			await reviewTelemetryService.flush();
 			await commandService.executeCommand('workbench.action.reloadWindow');
 		}
 	}
@@ -679,8 +612,7 @@ class OptionalExtensionPinUpgrades implements IWorkbenchContribution {
 	constructor(
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
 		@IMainProcessService private readonly mainProcessService: IMainProcessService,
-		@ILogService private readonly logService: ILogService,
-		@IReviewTelemetryService private readonly reviewTelemetryService: IReviewTelemetryService
+		@ILogService private readonly logService: ILogService
 	) {
 		void this.run().catch(error => {
 			this.logService.error(`[Whiteboard extensions] Could not check optional extension pins: ${getErrorMessage(error)}`);
@@ -708,20 +640,6 @@ class OptionalExtensionPinUpgrades implements IWorkbenchContribution {
 			stageRustAnalyzer: () => stageRustAnalyzer(this.mainProcessService, this.logService),
 			logError: (message, error) => {
 				this.logService.error(`[Whiteboard extensions] ${message}: ${getErrorMessage(error)}`);
-			},
-			onInstalled: (extensionId, trigger, durationMs) => {
-				this.reviewTelemetryService.capture('extension_installed', {
-					extension_id: extensionId,
-					trigger,
-					duration_ms: durationMs
-				});
-			},
-			onInstallFailed: (extensionId, trigger, phase) => {
-				this.reviewTelemetryService.capture('extension_install_failed', {
-					extension_id: extensionId,
-					trigger,
-					phase
-				});
 			}
 		}, 'auto_upgrade');
 	}

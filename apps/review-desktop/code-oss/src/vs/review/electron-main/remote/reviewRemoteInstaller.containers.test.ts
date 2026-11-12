@@ -85,7 +85,7 @@ before(
 		for (const { target } of found.values()) {
 			if (artifacts.has(target)) continue;
 			await releases!.stage(target);
-			artifacts.set(target, await remoteArtifact(target, VERSION, { pin: undefined, releases: releases!.url }));
+			artifacts.set(target, await remoteArtifact(target, VERSION, { releases: releases!.url }));
 		}
 	},
 	{ timeout: 30 * 60_000 },
@@ -241,7 +241,7 @@ test("with three versions installed and one running, an install leaves the runni
 async function nextArtifact(host: Host): Promise<ReviewRemoteArtifact> {
 	const { target } = found.get(host)!;
 	await releases!.stage(target, NEXT);
-	return remoteArtifact(target, NEXT, { pin: undefined, releases: releases!.url });
+	return remoteArtifact(target, NEXT, { releases: releases!.url });
 }
 
 const launcherTarget = (host: Host) => inContainer(host, "sed -n 's/^exec .\\(.*\\)\\/whiteboard. .*/\\1/p' ~/.local/bin/whiteboard");

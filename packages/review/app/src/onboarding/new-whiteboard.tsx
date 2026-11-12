@@ -2,7 +2,6 @@ import { withClass } from "@canvas/stylex-props";
 import { textStyles } from "@canvas/ui/text";
 import type { ReviewCanvasSetupActions } from "@dev.fast/review-protocol";
 import * as stylex from "@stylexjs/stylex";
-import { useEffect } from "react";
 
 import { DrawFlow, useOnboardingClient } from "./draw-flow";
 import { onboardingStyles as styles } from "./onboarding-styles";
@@ -17,7 +16,6 @@ const LEAD =
 export function NewWhiteboard({
   setupActions,
   embedded = false,
-  via,
   projectPath,
   onClose,
   onCopied,
@@ -25,7 +23,6 @@ export function NewWhiteboard({
 }: {
   setupActions: ReviewCanvasSetupActions;
   embedded?: boolean;
-  via?: "button" | "command" | "sidebar";
   projectPath?: string;
   /** Back to the list; the full-window screen only. */
   onClose?(): void;
@@ -34,10 +31,6 @@ export function NewWhiteboard({
   onCreate?(repositoryPath: string): Promise<void>;
 }) {
   const { client, unavailable } = useOnboardingClient(setupActions);
-
-  useEffect(() => {
-    if (via) client?.capture("new_whiteboard_opened", { via });
-  }, [client, via]);
 
   const content = unavailable ? (
     <p role="alert" {...stylex.props(textStyles.error, styles.error)}>
@@ -54,18 +47,10 @@ export function NewWhiteboard({
         onCreate &&
         (async (path) => {
           await onCreate(path);
-          client.capture("new_whiteboard_started", { mode: "empty", embedded });
           onClose?.();
         })
       }
       onCopied={onCopied}
-      onRunStarted={(mode, agent) =>
-        client.capture("new_whiteboard_started", {
-          mode,
-          embedded,
-          ...(agent && { agent }),
-        })
-      }
       intro={
         embedded
           ? undefined

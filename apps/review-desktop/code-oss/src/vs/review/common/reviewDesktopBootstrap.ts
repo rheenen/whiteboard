@@ -22,7 +22,6 @@ export interface ReviewDesktopConnection {
   readonly url: string;
   readonly token: string;
   readonly instanceId: string;
-  readonly installationId?: string;
   readonly cliPath?: string;
   readonly cliVersion?: string;
   /** The same port over TLS, trusted only by this app's renderers. */
@@ -140,15 +139,11 @@ export class ReviewReadyEventReader {
     }
     const cliPath = event["cliPath"];
     const cliVersion = event["cliVersion"];
-    const installationId = event["installationId"];
     return {
       version: REVIEW_DESKTOP_CONNECTION_VERSION,
       url: loopbackOrigin(url),
       token,
       instanceId,
-      ...(typeof installationId === "string" && installationId
-        ? { installationId }
-        : {}),
       ...(typeof cliPath === "string" && cliPath ? { cliPath } : {}),
       ...(typeof cliVersion === "string" && cliVersion ? { cliVersion } : {}),
       ...(event["tls"] === true ? { tls: true } : {}),

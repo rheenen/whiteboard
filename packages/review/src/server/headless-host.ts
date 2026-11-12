@@ -35,12 +35,7 @@ import {
 import { migrateDiffrConfig } from "./diffr-config.js";
 import { GlobalReviewDesktopVerbRelay } from "./global-verb-relay.js";
 import { createNodeRequestListener } from "./hono-http.js";
-import {
-  drainServerCrashReport,
-  installProcessErrorTelemetry,
-} from "./process-error-telemetry.js";
 import { createWhiteboardCore } from "./review-server-core.js";
-import type { ReviewTelemetryCapture } from "./ui-telemetry.js";
 
 interface HeadlessServerInput {
   stateDir: string;
@@ -48,8 +43,6 @@ interface HeadlessServerInput {
   softwareMapEnabled?: boolean;
   startedBy?: ReviewServerDiscovery["startedBy"];
   signal: AbortSignal;
-  /** The CLI's instance, already on the `headless` surface. */
-  telemetry?: Pick<ReviewTelemetryCapture, "captureUiEvent">;
   onReady(discovery: ReviewServerDiscovery): void;
   launchAskAgent?: AskAgentLauncher;
 }
@@ -61,12 +54,9 @@ export async function runHeadlessServer(input: HeadlessServerInput) {
   await mkdir(input.stateDir, { recursive: true, mode: 0o700 });
   const stateDir = await realpath(input.stateDir);
 
-  const stopErrorTelemetry =
-    input.telemetry && installProcessErrorTelemetry(input.telemetry);
-
   const outcome = await withHeadlessServerLock(stateDir, () =>
     serve({ ...input, stateDir }),
-  ).finally(() => stopErrorTelemetry?.());
+  );
 
   if (!outcome.acquired)
     throw new HeadlessServerBusyError(
@@ -192,8 +182,6 @@ async function serve(input: HeadlessServerInput) {
     throw new HeadlessServerBusyError(desktopOwnsHome(input.stateDir));
 
   await migrateDiffrConfig(input.signal);
-
-  if (input.telemetry) await drainServerCrashReport(input.telemetry);
 
   const local = await openReviewProfile(input.stateDir, {
     manageWorkspaces: true,

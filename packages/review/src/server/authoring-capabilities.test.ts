@@ -6,7 +6,6 @@ import path from "node:path";
 import { parseReviewDesktopVerbFrame } from "@dev.fast/review-protocol";
 import { connectReviewApi } from "@review/review-api/agent-client.js";
 import { openLocalReviewStore } from "@review/review-api/local-data.js";
-import { ReviewTelemetry } from "@review/review-telemetry.js";
 import { expect, it } from "vitest";
 
 import { createGlobalReviewServer } from "./desktop-server.js";
@@ -19,7 +18,6 @@ it("discovers the live Desktop map preference without opening a review", async (
     ...process.env,
     DEV_REVIEW_HOME: home,
     DEV_REVIEW_SERVER_DIR: "",
-    DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
   };
 
   const local = openLocalReviewStore(path.join(home, "review-api.db"));
@@ -55,7 +53,6 @@ it("discovers the live Desktop map preference without opening a review", async (
     port: 0,
     relay,
     discoveryPath: path.join(home, "review-desktop", "server.json"),
-    telemetry: ReviewTelemetry.fromEnv(env),
   });
 
   try {

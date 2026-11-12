@@ -17,7 +17,6 @@ import "./browser/parts/canvas/reviewCanvasEditor.contribution.js";
 import "./browser/parts/canvas/reviewDiffFilePicker.contribution.js";
 import "./browser/parts/canvas/reviewFind.contribution.js";
 import "./browser/reviewCommunity.contribution.js";
-import "./browser/reviewFeedback.contribution.js";
 import "./browser/reviewAppearance.contribution.js";
 import "./browser/reviewTheme.contribution.js";
 import "./contrib/boardTabs/reviewBoardTabs.contribution.js";
@@ -27,8 +26,6 @@ import "./contrib/install/reviewCliInstall.contribution.js";
 import "./contrib/quickaccess/reviewQuickAccess.contribution.js";
 import "./contrib/quickaccess/reviewGoToWhiteboard.contribution.js";
 import "./contrib/settings/reviewSettings.contribution.js";
-import "./contrib/telemetry/reviewLspTelemetry.contribution.js";
-import "./contrib/telemetry/reviewTelemetry.contribution.js";
 import "./contrib/tabs/reviewNewWhiteboard.contribution.js";
 // Board windows only: the source tree's window has no board catalog.
 import "./contrib/tabs/reviewOneBoard.contribution.js";
@@ -51,7 +48,6 @@ import {
 	IReviewDesktopConnectionService,
 	ReviewDesktopConnectionService,
 } from "./services/reviewDesktopConnectionService.js";
-import { IReviewTelemetryService, ReviewTelemetryService } from "./services/reviewTelemetryService.js";
 import "./services/reviewLocalLanguageFeatures.js";
 import "./services/reviewDefinitionPeek.js";
 import { IEditorResolverService } from "../workbench/services/editor/common/editorResolverService.js";
@@ -60,7 +56,6 @@ import { ReviewEditorResolverService } from "./services/reviewEditorResolverServ
 registerSingleton(IEditorResolverService, ReviewEditorResolverService, InstantiationType.Delayed);
 
 registerSingleton(IReviewDesktopConnectionService, ReviewDesktopConnectionService, InstantiationType.Eager);
-registerSingleton(IReviewTelemetryService, ReviewTelemetryService, InstantiationType.Delayed);
 
 registerSingleton(IReviewCanvasEditorTabsService, ReviewCanvasEditorTabsService, InstantiationType.Delayed);
 

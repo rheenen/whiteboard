@@ -48,7 +48,6 @@ export interface ReviewRemoteHostsOptions {
 	groups?(): Promise<readonly string[]>;
 	freePort?(): Promise<number>;
 	send(hosts: ReviewGatewayHost[]): void;
-	capture?: ReviewRemoteHostOptions["capture"];
 	log(message: string): void;
 	readonly clock?: ReviewRemoteClock;
 	readonly timeouts?: ReviewRemoteHostOptions["timeouts"];
@@ -268,7 +267,6 @@ export class ReviewRemoteHosts {
 			groups: this.options.groups,
 			freePort: this.options.freePort ?? freeLoopbackPort,
 			report: () => this.publish(),
-			capture: this.options.capture,
 			log: this.options.log,
 			clock: this.clock,
 			timeouts: this.options.timeouts,

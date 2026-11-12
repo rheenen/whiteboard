@@ -20,7 +20,6 @@ import type {
 import * as stylex from "@stylexjs/stylex";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
-import { AccountSection } from "./account-section";
 import { ConnectCard, LegacySkillsRow } from "./connect-card";
 import { DiffrConfigSection } from "./diffr-config-section";
 import { homeStyles } from "./home-styles";
@@ -33,7 +32,6 @@ import {
 import { Row, Section, sectionId } from "./settings-section";
 import { settingsStyles as styles } from "./settings-styles";
 import { withClass } from "./stylex-props";
-import { TraceCaptureSection } from "./trace-capture-section";
 import { SegmentedControl, labeledOptions } from "./ui/segmented";
 
 const COLOR_THEME_GROUPS: [ReviewColorThemeKind, string][] = [
@@ -97,10 +95,6 @@ export function SettingsPage({
 }: {
   settings: ReviewCanvasSettingsContent;
 }) {
-  const [telemetryEnabled, setTelemetryEnabled] = useState(
-    settings.telemetryEnabled,
-  );
-
   const [theme, setTheme] = useState(settings.theme);
   const [diffTheme, setDiffTheme] = useState(settings.diffTheme);
   const [colorThemes, setColorThemes] = useState(settings.colorThemes);
@@ -176,10 +170,8 @@ export function SettingsPage({
   const contents = useMemo(
     () =>
       [
-        "Account",
         ...(agents ? ["Agents"] : []),
         ...(commandLine ? ["Command line"] : []),
-        "Privacy",
         "Appearance",
         "Editor",
         "Notifications",
@@ -216,8 +208,6 @@ export function SettingsPage({
               Settings apply to Whiteboard on this machine.
             </p>
 
-            <AccountSection request={settings.request} />
-
             {install ? (
               <Section label="Agents">
                 <LegacySkillsRow
@@ -236,8 +226,8 @@ export function SettingsPage({
                   label="whiteboard command"
                   description={
                     install.status.shim.installed
-                      ? `Installed at ${install.status.shim.path}. Your agents and trace capture run it.`
-                      : "Adds whiteboard to your shell PATH. Your agents and trace capture run it."
+                      ? `Installed at ${install.status.shim.path}. Your agents run it.`
+                      : "Adds whiteboard to your shell PATH. Your agents run it."
                   }
                 >
                   {install.status.shim.installed ||
@@ -259,29 +249,6 @@ export function SettingsPage({
                 </Row>
               </Section>
             ) : null}
-
-            <Section label="Privacy">
-              <Row
-                label="Share anonymous usage data"
-                description="Counts and timings only. Never code, file paths, or repository names."
-              >
-                <label
-                  {...stylex.props(styles.toggle)}
-                  aria-label="Share anonymous usage data"
-                >
-                  <Checkbox
-                    checked={telemetryEnabled}
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      void run(
-                        () => settings.setTelemetryEnabled(enabled),
-                        setTelemetryEnabled,
-                      );
-                    }}
-                  />
-                </label>
-              </Row>
-            </Section>
 
             <Section label="Appearance">
               <Row label="Theme" description="How Whiteboard looks.">
@@ -388,7 +355,7 @@ export function SettingsPage({
                   </Row>
                   <Row
                     label="Reading typeface"
-                    description="Whiteboard text, Ask answers, and trace notes."
+                    description="Whiteboard text and Ask answers."
                   >
                     <SegmentedControl
                       label="Reading typeface"
@@ -632,18 +599,12 @@ export function SettingsPage({
                   }
                 />
               </Row>
-              {install ? (
-                <TraceCaptureSection
-                  install={install}
-                  onStatusChange={setInstallStatus}
-                />
-              ) : null}
             </Section>
 
             <Section label="Uninstall">
               <Row
                 label="Uninstall Whiteboard"
-                description="Removes the whiteboard command and trace setup. Your sessions stay on disk."
+                description="Removes the whiteboard command. Your sessions stay on disk."
               >
                 <Button onClick={settings.uninstallApp}>Uninstall…</Button>
               </Row>

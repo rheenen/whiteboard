@@ -18,13 +18,11 @@ import { DocumentCodeView } from "./DocumentCodeView";
 import { drawStyles } from "./draw-styles";
 import { useReviewSession } from "./host/review-session";
 import { codeInspectorMarker, documentMarker } from "./markers.stylex";
-import { peekResolutionOutcome } from "./peek-telemetry";
 import { type ReviewLensView, useReviewLenses } from "./review-lenses";
 import type { SourcePeekAnchor } from "./review-panel-model";
 import { radius } from "./scale.stylex";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 
 /** The software-map inspector's peek input: a range on one diff side. */
 export interface CodePeekProps {
@@ -131,7 +129,6 @@ export function CodePeekCard({
   heightMode = "capped",
   onNativeFocus,
   lenses: lensesOverride,
-  reportOutcome = false,
   edgeToEdge = false,
   xstyle,
 }: {
@@ -140,9 +137,6 @@ export function CodePeekCard({
   heightMode?: ReviewPeekHeightMode;
   onNativeFocus?: () => void;
   lenses?: ReviewLensView;
-  /** Report resolution telemetry. Only the panel the user opened sets this,
-   * so an authored document with many inline peeks sends one event, not N. */
-  reportOutcome?: boolean;
   /** Run across its column like the Diff panel, not as an inset card. */
   edgeToEdge?: boolean;
   /** Call-site styles, applied last. */
@@ -164,30 +158,10 @@ export function CodePeekCard({
 
   const unavailable = lenses?.progress?.unavailableSelections?.[key];
 
-  const outcome = peekResolutionOutcome({
-    resolvedCount: ranges.length,
-    complete: Boolean(lenses?.progress?.complete),
-    unavailable: Boolean(unavailable),
-    error: Boolean(lenses?.error),
-  });
-
-  const reason = unavailable ?? (lenses?.error ? "error" : "unresolved");
-
-  const reportedKey = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!reportOutcome || outcome === "pending" || reportedKey.current === key)
-      return;
-    reportedKey.current = key;
-
-    if (outcome === "resolved")
-      captureUiEvent(session, "peek_resolved", { root_kind: "range" });
-    else
-      captureUiEvent(session, "peek_resolve_failed", {
-        root_kind: "range",
-        reason,
-      });
-  }, [key, outcome, reason, reportOutcome, session]);
+  const failed =
+    Boolean(lenses?.progress?.complete) ||
+    Boolean(unavailable) ||
+    Boolean(lenses?.error);
 
   if (!ranges.length)
     return (
@@ -201,7 +175,7 @@ export function CodePeekCard({
         )}
         role="status"
       >
-        {outcome === "failed" ? "Code unavailable" : "Loading code…"}
+        {failed ? "Code unavailable" : "Loading code…"}
       </section>
     );
 
@@ -255,13 +229,11 @@ export function SourceCodePeek({
   active,
   onNativeFocus,
   lenses,
-  reportOutcome,
 }: {
   sources: readonly DiffSelection[];
   active?: boolean;
   onNativeFocus?: () => void;
   lenses?: ReviewLensView;
-  reportOutcome?: boolean;
 }) {
   return sources.map((source, index) => (
     <Fragment key={selectionKey(source)}>
@@ -278,7 +250,6 @@ export function SourceCodePeek({
         edgeToEdge
         onNativeFocus={onNativeFocus}
         lenses={lenses}
-        reportOutcome={reportOutcome && index === 0}
       />
     </Fragment>
   ));

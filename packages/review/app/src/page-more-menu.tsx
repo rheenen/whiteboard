@@ -6,13 +6,12 @@ import type { ReviewView } from "@dev.fast/review-protocol";
 import * as stylex from "@stylexjs/stylex";
 import { type ReactElement, useContext, useRef, useState } from "react";
 
+import { ExportContext } from "./export-context";
 import { useCanvasMenu } from "./host/canvas-ui";
 import { useReviewSession } from "./host/review-session";
 import { useNotify } from "./notify";
 import { useReviewActions, useReviewState } from "./review-context";
-import { SharingContext } from "./share-control";
 import { shellStyles } from "./shell-styles";
-import { captureUiEvent } from "./ui-telemetry";
 
 /** A page bar icon folded into "⋯" where the bar is too narrow for it. */
 export interface PageMoreFolded {
@@ -33,7 +32,7 @@ export function PageMoreMenu({
   folded = [],
   onOpenContents,
 }: {
-  /** Offered views without a sidebar tab, such as Trace. */
+  /** Offered views without a sidebar tab, such as Map. */
   views: readonly { view: ReviewView; label: string }[];
   onShowView(view: ReviewView): void;
   folded?: readonly PageMoreFolded[];
@@ -49,7 +48,7 @@ export function PageMoreMenu({
   const dismissing = useRef(false);
   const [busy, setBusy] = useState(false);
 
-  const sharing = useContext(SharingContext);
+  const exportable = useContext(ExportContext);
   const historical = Boolean(session.review?.historicalRevision);
   const finished = submissionOutcome !== null;
   const sourceWindows = session.review?.available?.sourceWindows !== false;
@@ -58,7 +57,7 @@ export function PageMoreMenu({
     items: [
       ...(onOpenContents ? [{ id: "contents", label: "Contents" }] : []),
       ...folded.map(({ id, label }) => ({ id: `folded:${id}`, label })),
-      ...(sharing ? [{ id: "export", label: "Export file…" }] : []),
+      ...(exportable ? [{ id: "export", label: "Export file…" }] : []),
       ...(!historical && !finished
         ? [{ id: "trash", label: "Move to Trash", enabled: !busy }]
         : []),
@@ -91,13 +90,14 @@ export function PageMoreMenu({
         }
       }
 
-      if (id === "export" && sharing) {
-        captureUiEvent(session, "whiteboard_file_exported", {});
-
+      if (id === "export" && exportable) {
         try {
           await session.surface.post({
             name: "exportReviewFile",
-            args: { reviewId: sharing.reviewId, version: sharing.version },
+            args: {
+              reviewId: exportable.reviewId,
+              version: exportable.version,
+            },
           });
         } catch (error) {
           notify({
@@ -111,7 +111,6 @@ export function PageMoreMenu({
       }
 
       if (id === "source") {
-        captureUiEvent(session, "source_tree_opened", { via: "topbar" });
         // The desktop already showed why it failed.
         session.surface
           .post({ name: "openSourceTree", args: {} })

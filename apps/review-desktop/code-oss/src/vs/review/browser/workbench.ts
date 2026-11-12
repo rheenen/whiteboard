@@ -11,12 +11,6 @@ import { DeferredPromise, RunOnceScheduler } from '../../base/common/async.js';
 import { isChrome, isFirefox, isFullscreen, isSafari, onDidChangeFullscreen } from '../../base/browser/browser.js';
 import { mark } from '../../base/common/performance.js';
 import { onUnexpectedError, setUnexpectedErrorHandler } from '../../base/common/errors.js';
-import { ReviewErrorReportLimiter } from '../common/reviewErrorReport.js';
-import { reviewInstallLocation } from '../common/reviewInstallLocation.js';
-import { FileAccess } from '../../base/common/network.js';
-import { IWorkbenchEnvironmentService } from '../../workbench/services/environment/common/environmentService.js';
-import { IReviewTelemetryService } from '../services/reviewTelemetryService.js';
-import { ITimerService } from '../../workbench/services/timer/browser/timerService.js';
 import { isLinux, isMacintosh, isNative, isWeb, isWindows } from '../../base/common/platform.js';
 import { IPartVisibilityChangeEvent, IWorkbenchLayoutService, MULTI_WINDOW_PARTS, PanelAlignment, Parts, Position, SINGLE_WINDOW_PARTS } from '../../workbench/services/layout/browser/layoutService.js';
 import { ILayoutOffsetInfo } from '../../platform/layout/browser/layoutService.js';
@@ -397,8 +391,7 @@ export class ReviewWorkbench extends Disposable implements IAgentWorkbenchLayout
 		});
 
 		// Listen on synchronous errors that never reach a promise. Without this
-		// they only reach the console, so they are invisible to the log and to
-		// telemetry alike.
+		// they only reach the console and never the log.
 		mainWindow.addEventListener('error', (event) => {
 			onUnexpectedError(event.error ?? event.message);
 		});
@@ -424,49 +417,6 @@ export class ReviewWorkbench extends Disposable implements IAgentWorkbenchLayout
 
 		// Log it
 		logService.error(message);
-
-		// Report it
-		this.reportUnexpectedError(error);
-	}
-
-	private readonly errorReportLimiter = new ReviewErrorReportLimiter();
-	private workbenchInstantiationService: IInstantiationService | undefined;
-	private reviewTelemetryService: IReviewTelemetryService | undefined;
-
-	/**
-	 * Send the error to the loopback Review server, which strips the message and
-	 * every stack frame outside the shipped bundle before anything leaves this
-	 * machine. Errors raised before `startup()` have no service to report
-	 * through and are dropped rather than buffered: buffering would hold raw
-	 * messages before the telemetry setting can be read.
-	 */
-	private reportUnexpectedError(error: unknown): void {
-		this.errorReportLimiter.report(error, report => {
-			this.reviewTelemetryService ??= this.workbenchInstantiationService?.invokeFunction(accessor => accessor.get(IReviewTelemetryService));
-			this.reviewTelemetryService?.capture('client_error', {
-				error_source: 'renderer_unexpected',
-				error_process: 'renderer',
-			}, report);
-		});
-	}
-
-	/** Report the startup trace's workbench time once the timer service has it. */
-	private reportAppReady(): void {
-		try {
-			const timerService = this.workbenchInstantiationService?.invokeFunction(accessor => accessor.get(ITimerService));
-			timerService?.whenReady().then(() => {
-				this.reviewTelemetryService ??= this.workbenchInstantiationService?.invokeFunction(accessor => accessor.get(IReviewTelemetryService));
-				const properties: Record<string, string | number> = { duration_ms: Math.round(timerService.startupMetrics.ellapsed) };
-				// Only a packaged macOS bundle has a location Squirrel cares about.
-				if (isMacintosh && this.workbenchInstantiationService?.invokeFunction(accessor => accessor.get(IWorkbenchEnvironmentService).isBuilt)) {
-					properties.install_location = reviewInstallLocation(FileAccess.asFileUri('').fsPath);
-				}
-				this.reviewTelemetryService?.capture('app_ready', properties);
-			}, onUnexpectedError);
-		} catch (error) {
-			// Telemetry must never keep the workbench from restoring.
-			onUnexpectedError(error);
-		}
 	}
 
 	//#endregion
@@ -480,11 +430,6 @@ export class ReviewWorkbench extends Disposable implements IAgentWorkbenchLayout
 
 			// Services
 			const instantiationService = this.initServices(this.serviceCollection);
-
-			// The error handler is installed in the constructor, long before any
-			// service exists. Keep the instantiation service here so it can
-			// resolve the telemetry service on the first error.
-			this.workbenchInstantiationService = instantiationService;
 
 			instantiationService.invokeFunction(accessor => {
 				const lifecycleService = accessor.get(ILifecycleService);
@@ -958,8 +903,6 @@ export class ReviewWorkbench extends Disposable implements IAgentWorkbenchLayout
 
 		// Mark as restored
 		this.setRestored();
-
-		this.reportAppReady();
 
 		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
 		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {

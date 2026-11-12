@@ -9,10 +9,12 @@ import type {
   DiffSelection,
 } from "@dev.fast/whiteboard-document";
 import * as stylex from "@stylexjs/stylex";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
+import { CommentPin, usePartComments } from "./board-comments";
 import { type CallTreeStop, callTreeStops } from "./call-tree";
 import { DiagramHeader } from "./diagram-header";
+import { useOfferStopComment } from "./diagram-part-comment";
 import { DiffCountHalves } from "./diff-count";
 import { drawStyles } from "./draw-styles";
 import { useReviewSession } from "./host/review-session";
@@ -20,7 +22,6 @@ import { callEdgeMarker } from "./markers.stylex";
 import { useReviewLenses } from "./review-lenses";
 import { useReviewPanel } from "./review-panel";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 
 // Presentation retained from review-experimental's DiffWorkspace.
 export function CallTree({
@@ -28,8 +29,11 @@ export function CallTree({
   onReveal,
   requireReady = false,
   currentStopId = null,
+  commentsOn,
 }: {
   block: CallStackDiffBlock;
+  /** The block whose comments the rows show icons for. */
+  commentsOn?: string;
   requireReady?: boolean;
   onReveal(source: DiffSelection, sectionId?: string, anchorId?: string): void;
   /** Set by a scroll-tracking host; otherwise the last clicked stop is current. */
@@ -143,11 +147,38 @@ export function CallTree({
                   </span>
                 )}
               </button>
+              {commentsOn ? (
+                <RowComments
+                  blockId={commentsOn}
+                  partId={stop.anchorId ?? stop.id}
+                  label={stop.label}
+                />
+              ) : null}
             </div>
           );
         })}
       </div>
     </nav>
+  );
+}
+
+/** The comment icon of a call, at the end of its row. */
+function RowComments({
+  blockId,
+  partId,
+  label,
+}: {
+  blockId: string;
+  partId: string;
+  label: string;
+}) {
+  const matches = useCallback((id: string) => id === partId, [partId]);
+  const comments = usePartComments(blockId, matches);
+
+  if (!comments.length) return null;
+
+  return (
+    <CommentPin comments={comments} label={label} xstyle={styles.rowPin} />
   );
 }
 
@@ -234,6 +265,7 @@ function TreeConnectors({
 export function DocumentCallTree({ block }: { block: CallStackDiffBlock }) {
   const session = useReviewSession();
   const openPeek = useReviewPanel((state) => state.openPeek);
+  const offerComment = useOfferStopComment();
 
   return (
     <figure
@@ -247,22 +279,29 @@ export function DocumentCallTree({ block }: { block: CallStackDiffBlock }) {
       <DiagramHeader kind="Call tree" title={block.title ?? "Call tree"} />
       <CallTree
         block={block}
+        commentsOn={block.id}
         onReveal={(source, sectionId, anchorId) => {
-          captureUiEvent(session, "peek_opened", { via: "call_stack_frame" });
-
           const stop = callTreeStops(block).find(
             (stop) => stop.id === sectionId,
           )!;
 
-          openPeek({
-            kind: "peek",
+          const step = {
             anchor: {
               id: anchorId ?? sectionId!,
               title: stop.label,
               peek: source,
             },
-            content: { kind: "source", source },
+            label: stop.label,
+            content: { kind: "source" as const, source },
+          };
+
+          openPeek({
+            kind: "peek",
+            anchor: step.anchor,
+            content: step.content,
           });
+
+          if (block.id) offerComment(block.id, step);
         }}
       />
     </figure>
@@ -281,6 +320,8 @@ const styles = stylex.create({
   // A hovered or focused call-site edge paints over the rows below it.
   entry: {
     position: "relative",
+    display: "flex",
+    alignItems: "center",
     zIndex: {
       default: null,
       [stylex.when.descendant(":hover", callEdgeMarker)]: 1,
@@ -291,7 +332,8 @@ const styles = stylex.create({
     position: "relative",
     display: "flex",
     alignItems: "center",
-    width: "100%",
+    flex: 1,
+    minWidth: 0,
     height: "26px",
     padding: `0 ${space.s12} 0 ${space.s14}`,
     backgroundColor: {
@@ -331,6 +373,10 @@ const styles = stylex.create({
     marginLeft: "auto",
     paddingLeft: space.s12,
     fontSize: fontSize.micro,
+  },
+  rowPin: {
+    flexShrink: 0,
+    marginInlineEnd: space.s12,
   },
   connectors: {
     flexShrink: 0,

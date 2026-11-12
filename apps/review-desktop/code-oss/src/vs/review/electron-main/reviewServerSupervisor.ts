@@ -81,11 +81,7 @@ export interface ReviewServerSupervisorOptions {
   readonly logInfo: (message: string) => void;
   readonly logError: (message: string) => void;
   readonly createProcess: () => IReviewServerProcess;
-  readonly telemetryEnabled?: boolean;
-  readonly serviceOrigin?: string;
   readonly userExtensionsPath?: string;
-  /** Electron's Review crash dump directory; the server uploads only from it. */
-  readonly crashDumpsDir?: string;
   /** A server process that died on its own; deliberate stops never report. */
   readonly onServerTerminated?: (detail: ReviewServerTermination) => void;
   /** Called every time a server, first or restarted, announces its endpoint. */
@@ -105,12 +101,9 @@ export function createReviewServerEnvironment(options: {
   readonly token: string;
   readonly instanceId: string;
   readonly appPid: number;
-  readonly telemetryEnabled: boolean;
-  readonly serviceOrigin?: string;
   readonly rustAnalyzerSource?: string;
   readonly appSessionId: string;
   readonly channel: ReviewReleaseChannel;
-  readonly crashDumpsDir?: string;
   readonly tls?: { key: string; cert: string };
 }): Record<string, string | undefined> {
   return {
@@ -126,12 +119,6 @@ export function createReviewServerEnvironment(options: {
     DEV_FAST_REVIEW_RELEASE_CHANNEL: options.releaseChannel,
     DEV_FAST_REVIEW_APP_PATH: applicationPath(process.execPath),
     DEV_FAST_REVIEW_DESKTOP_HOST_AUTOSTART: "1",
-    DEV_FAST_REVIEW_TELEMETRY_DISABLED: options.telemetryEnabled
-      ? undefined
-      : "1",
-    ...(options.serviceOrigin && {
-      DEV_REVIEW_SERVICE_ORIGIN: options.serviceOrigin,
-    }),
     // The app's own Electron binary doubles as the CLI's Node runtime
     // (ELECTRON_RUN_AS_NODE), so an installed `whiteboard` command never
     // depends on a system Node.
@@ -139,7 +126,6 @@ export function createReviewServerEnvironment(options: {
     DEV_FAST_REVIEW_RUST_ANALYZER: options.rustAnalyzerSource,
     DEV_FAST_REVIEW_APP_SESSION_ID: options.appSessionId,
     DEV_FAST_REVIEW_CHANNEL: options.channel,
-    DEV_FAST_REVIEW_CRASH_DUMPS_DIR: options.crashDumpsDir,
     ...(options.tls && {
       DEV_FAST_REVIEW_SERVER_TLS_KEY: options.tls.key,
       DEV_FAST_REVIEW_SERVER_TLS_CERT: options.tls.cert,
@@ -229,7 +215,6 @@ export class ReviewServerSupervisor extends Disposable {
   /** Why the server could not start, in its own words, when it said. */
   private startupError: string | undefined;
   private stopping = false;
-  private telemetryEnabled: boolean;
   private readyProcess: IReviewServerProcess | undefined;
   private remoteHosts: ReviewGatewayHost[] | undefined;
 
@@ -246,8 +231,7 @@ export class ReviewServerSupervisor extends Disposable {
   /**
    * One id per app launch. A restarted server inherits it, so the sessions it
    * left open still belong to this launch, and every renderer reads it from
-   * the connection instead of minting its own. A UUIDv7, because it doubles
-   * as PostHog's `$session_id`.
+   * the connection instead of minting its own.
    */
   readonly appSessionId = uuidV7();
 
@@ -258,7 +242,6 @@ export class ReviewServerSupervisor extends Disposable {
   constructor(private readonly options: ReviewServerSupervisorOptions) {
     super();
     this.readyTimeout = options.readyTimeout ?? REVIEW_SERVER_STARTUP_TIMEOUT_MS;
-    this.telemetryEnabled = options.telemetryEnabled !== false;
     this.tls = this.createLoopbackCert();
   }
 
@@ -274,11 +257,6 @@ export class ReviewServerSupervisor extends Disposable {
       this.options.logError(`[Review Desktop] no loopback TLS cert, renderers use plain HTTP: ${String(error)}`);
       return undefined;
     }
-  }
-
-  setTelemetryEnabled(enabled: boolean): void {
-    this.telemetryEnabled = enabled;
-    this.serverProcess?.postMessage({ type: "telemetry-setting", enabled });
   }
 
   setRemoteHosts(hosts: ReviewGatewayHost[]): void {
@@ -465,12 +443,9 @@ export class ReviewServerSupervisor extends Disposable {
       token: this.token,
       instanceId: this.instanceId,
       appPid,
-      telemetryEnabled: this.telemetryEnabled,
-      serviceOrigin: this.options.serviceOrigin,
       rustAnalyzerSource,
       appSessionId: this.appSessionId,
       channel: this.options.channel,
-      crashDumpsDir: this.options.crashDumpsDir,
       tls: this.tls,
     });
     const started = serverProcess.start({

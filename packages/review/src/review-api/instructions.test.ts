@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runReviewAgentCli } from "./agent-cli.js";
 import * as agentClient from "./agent-client.js";
 import { type AuthoringTool, callAuthoringTool } from "./agent-client.js";
-import { authoringTools } from "./authoring-tools.js";
 import { ReviewApiClient } from "./client.js";
 import { createReviewApi } from "./http.js";
 import {
@@ -19,7 +18,7 @@ import {
 import { serveReviewMcp } from "./mcp.js";
 import { ReviewStore } from "./store.js";
 
-const live = { traceEnabled: true, animationsEnabled: true };
+const live = { animationsEnabled: true };
 
 describe("renderInstructions", () => {
   let root: string;
@@ -31,7 +30,6 @@ describe("renderInstructions", () => {
       Object.entries({
         authoring: "AUTHORING_WORKFLOW",
         "file-lenses": "LENS_GUIDANCE",
-        "trace-archaeology": "TRACE_GUIDANCE",
       }).map(([name, content]) =>
         writeFile(path.join(root, "instructions", `${name}.md`), content),
       ),
@@ -54,31 +52,17 @@ describe("renderInstructions", () => {
     }
   });
 
-  it("serves the authoring workflow with the other topics listed", async () => {
+  it("serves the authoring workflow with its component reference", async () => {
     const authoring = await renderInstructions("authoring", live, root);
 
     expect(authoring.startsWith("AUTHORING_WORKFLOW")).toBe(true);
-    expect(authoring).toContain('topic:"trace-archaeology"');
+    expect(authoring).not.toContain("trace");
   });
 
   it("serves the other fixed topics", async () => {
-    for (const [topic, marker] of [
-      ["file-lenses", "LENS_GUIDANCE"],
-      ["trace-archaeology", "TRACE_GUIDANCE"],
-    ] as const) {
-      expect(await renderInstructions(topic, live, root)).toBe(marker);
-    }
-  });
-
-  it("omits trace guidance from authoring when capture is off", async () => {
-    const text = await renderInstructions(
-      "authoring",
-      { traceEnabled: false },
-      root,
+    expect(await renderInstructions("file-lenses", live, root)).toBe(
+      "LENS_GUIDANCE",
     );
-
-    expect(text).not.toContain("trace-archaeology");
-    expect(text).not.toContain("check if traces are available");
   });
 
   it("accepts only named topics, defaulting to authoring", () => {
@@ -97,21 +81,6 @@ describe("renderInstructions", () => {
         file: "secret.md",
       }).success,
     ).toBe(false);
-  });
-});
-
-describe("tool descriptions", () => {
-  it("mention trace-archaeology only when capture is on", () => {
-    const off = authoringTools(false).find(
-      (tool) => tool.name === "review_get_instructions",
-    );
-
-    const on = authoringTools(true).find(
-      (tool) => tool.name === "review_get_instructions",
-    );
-
-    expect(off?.description).not.toContain("trace-archaeology");
-    expect(on?.description).toContain("trace-archaeology");
   });
 });
 
@@ -156,9 +125,7 @@ describe("review_get_instructions", () => {
 
     const guidance = await callAuthoringTool(client, tool, {});
 
-    expect(guidance).toBe(
-      await renderInstructions("authoring", { traceEnabled: false }),
-    );
+    expect(guidance).toBe(await renderInstructions("authoring", {}));
     expect(guidance).toBe(await client.read("/instructions"));
     expect(guidance).toBe(await client.read("/instructions?topic=authoring"));
     expect(
@@ -240,47 +207,10 @@ describe("review_get_instructions", () => {
 
       expect((await app.request("/authoring")).status).toBe(200);
 
-      for (const topic of ["authoring", "trace-archaeology"]) {
+      for (const topic of ["authoring", "file-lenses"]) {
         const instructions = await app.request(`/instructions?topic=${topic}`);
         expect(instructions.status).toBe(200);
       }
-    } finally {
-      store.close();
-    }
-  });
-
-  it("reads the trace gate on every request", async () => {
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    let capture = false;
-
-    try {
-      const app = createReviewApi(
-        store,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        async () => capture,
-      );
-
-      const traces = async () =>
-        (await app.request("/instructions?topic=trace-archaeology")).json();
-
-      expect(await traces()).toMatch(/^Trace capture is off/);
-
-      capture = true;
-
-      expect(await traces()).not.toMatch(/^Trace capture is off/);
-      expect(
-        (await (await app.request("/authoring")).json()).find(
-          (tool: AuthoringTool) => tool.name === "review_get_instructions",
-        ).description,
-      ).toContain('topic:"trace-archaeology"');
     } finally {
       store.close();
     }
@@ -297,7 +227,6 @@ async function startMcp(connect: () => Promise<ReviewApiClient>) {
     stdin,
     stdout,
     stderr,
-    true,
   );
 
   let output = "";
@@ -378,7 +307,6 @@ describe("whiteboard mcp instructions", () => {
       ).toEqual(["session_get_instructions", "whiteboard_status"]);
       const guidance = list.result.tools[0].description;
       expect(guidance).toContain("session_get_instructions");
-      expect(guidance).toContain("trace-archaeology");
 
       const down = await mcp.request(3, "tools/call", {
         name: "session_get_instructions",
@@ -423,10 +351,10 @@ describe("whiteboard mcp instructions", () => {
 
       const restarted = await mcp.request(7, "tools/call", {
         name: "session_get_instructions",
-        arguments: { topic: "trace-archaeology" },
+        arguments: { topic: "file-lenses" },
       });
 
-      expect(restarted.result.content[0].text).toContain("trace");
+      expect(restarted.result.content[0].text).toContain("lens");
     } finally {
       await mcp.close();
       store.close();

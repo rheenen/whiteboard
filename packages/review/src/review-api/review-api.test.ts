@@ -9,7 +9,11 @@ import {
   STRUCTURAL_DIFF_WIRE_VERSION,
   type StructuralSource,
 } from "@dev.fast/review-protocol";
-import { ReviewInputError, rangeAnchor } from "@dev.fast/whiteboard-document";
+import {
+  ReviewInputError,
+  TRACE_QUOTES_UNSUPPORTED,
+  rangeAnchor,
+} from "@dev.fast/whiteboard-document";
 import { createGlobalReviewServer } from "@review/server/desktop-server.js";
 import { GlobalReviewDesktopVerbRelay } from "@review/server/global-verb-relay.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -560,12 +564,6 @@ describe("snapshot authoring", () => {
       ],
     },
     { type: "image", assetId: "image-1", alt: "Example" },
-    {
-      type: "trace_quote",
-      traceId: "trace-1",
-      eventId: "event-1",
-      text: "Keep it simple",
-    },
     { type: "software_map", mapVersionId: "map-1" },
   ])(
     "saves and reads a $type component without a second document representation",
@@ -583,6 +581,39 @@ describe("snapshot authoring", () => {
       );
     },
   );
+
+  it("keeps a stored trace quote through other edits but refuses a new one", async () => {
+    const quote = {
+      type: "trace_quote" as const,
+      traceId: "trace-1",
+      eventId: "event-1",
+      text: "Keep it simple",
+    };
+
+    const { reviewId } = await store.execute(
+      request({
+        type: "create",
+        title: "From a build with trace capture",
+        target: { kind: "commits", ...pins },
+      }),
+      { document: [{ id: "block-1", ...quote }] },
+    );
+
+    await edit(reviewId, {
+      type: "insert",
+      content: { type: "markdown", markdown: "Still editable" },
+    });
+    expect(store.read(reviewId).document).toEqual([
+      expect.objectContaining(quote),
+      expect.objectContaining({ markdown: "Still editable" }),
+    ]);
+    await expect(
+      edit(reviewId, {
+        type: "insert",
+        content: { ...quote, eventId: "event-2" },
+      }),
+    ).rejects.toThrow(TRACE_QUOTES_UNSUPPORTED);
+  });
 
   it("keeps reviews isolated and history readable across restart, deletion, restore and new pins", async () => {
     const first = await create(),
@@ -4366,64 +4397,6 @@ it("stops comparing a worktree revision once a newer one starts", async () => {
 
   await expect(stale).rejects.toThrow("aborted");
   void data.close();
-});
-
-it("reports a created review with the origin its headers claim", async () => {
-  const { createReviewApi } = await import("./http.js");
-  const created: unknown[] = [];
-
-  const checkout = path.join(directory, "checkout");
-  execFileSync("git", ["init", "-q", checkout]);
-
-  const api = createReviewApi(
-    store,
-    new LocalReviewData(store),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    { onReviewCreated: (event) => created.push(event) },
-  );
-
-  const create = (title: string, headers: Record<string, string>) =>
-    api.request("/commands", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(
-        request({
-          type: "create",
-          title,
-          target: { kind: "project", repositoryPath: checkout },
-        }),
-      ),
-    });
-
-  expect(
-    (
-      await create("Example", {
-        "x-review-via": "mcp",
-        "x-review-agent": "codex",
-      })
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await create("Other", {
-        "x-review-via": "carrier-pigeon",
-      })
-    ).status,
-  ).toBe(200);
-
-  expect(created).toEqual([
-    {
-      reviewId: expect.any(String),
-      blocks: 0,
-      via: "mcp",
-      agentKind: "codex",
-    },
-    { reviewId: expect.any(String), blocks: 0, via: "other" },
-  ]);
 });
 
 function structuralSource(text: string): StructuralSource {

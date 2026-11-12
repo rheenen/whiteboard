@@ -24,13 +24,6 @@ const fresh: ReviewCliInstallStatus = {
     profileConfigured: false,
     onPath: false,
   },
-  trace: {
-    enabled: false,
-    configured: false,
-    autoActivateRepositories: false,
-    envPath: "/tmp/env",
-    settingsPath: "/tmp/settings",
-  },
   cli: { path: "/tmp/cli.js", version: "0.0.1" },
   connect: {
     command: "sh",

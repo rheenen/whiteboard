@@ -10,18 +10,20 @@ describe("listenForDesktopHostShutdown", () => {
     const processEvents = new EventEmitter();
     const parentPort = new EventEmitter();
     const onShutdown = vi.fn<() => void>();
-    const onTelemetrySetting = vi.fn<(enabled: boolean) => void>();
     const onStageRustAnalyzer = vi.fn<(path: string) => void>();
 
     const dispose = listenForDesktopHostShutdown(
       Object.assign(processEvents, { parentPort }),
       onShutdown,
-      onTelemetrySetting,
       onStageRustAnalyzer,
     );
 
+    // Older Desktop builds still send these; they are ignored.
     parentPort.emit("message", {
       data: { type: "telemetry-setting", enabled: false },
+    });
+    parentPort.emit("message", {
+      data: { type: "sharing-setting", enabled: false },
     });
     parentPort.emit("message", { data: { type: "shutdown" } });
     parentPort.emit("message", {
@@ -36,7 +38,6 @@ describe("listenForDesktopHostShutdown", () => {
     parentPort.emit("message", { data: { type: "shutdown" } });
 
     expect(onShutdown).toHaveBeenCalledOnce();
-    expect(onTelemetrySetting).toHaveBeenCalledWith(false);
     expect(onStageRustAnalyzer).toHaveBeenCalledWith(
       "/extensions/rust/server/rust-analyzer",
     );
@@ -49,7 +50,6 @@ describe("listenForDesktopHostShutdown", () => {
     listenForDesktopHostShutdown(
       Object.assign(new EventEmitter(), { parentPort }),
       () => {},
-      undefined,
       undefined,
       onRemoteHosts,
     );

@@ -1,14 +1,9 @@
 import type { ApiDocumentData } from "@canvas/api-document";
-import { traceQuoteLink } from "@dev.fast/whiteboard-document";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-/** What the side column shows that a link can open: a source anchor or a
- * trace event. */
-export type OpenLink =
-  | { anchorId: string }
-  | { traceId: string; event?: number }
-  | null;
+/** What the side column shows that a link can open: a source anchor. */
+export type OpenLink = { anchorId: string } | null;
 
 export const openLinkKey = new PluginKey<OpenLink>("openLink");
 
@@ -32,24 +27,11 @@ export function openLinks(data: () => ApiDocumentData): Plugin<OpenLink> {
         const open = openLinkKey.getState(state);
 
         if (!open) return null;
-        const { anchors, traces } = data();
+        const { anchors } = data();
         const washed: Decoration[] = [];
 
-        const opens = (blockId: string, href: string) => {
-          if ("anchorId" in open)
-            return anchors.get(`${blockId}:${href}`)?.id === open.anchorId;
-
-          const quote = traceQuoteLink(href);
-
-          if (!quote || quote.traceId !== open.traceId) return false;
-          const events = traces.get(quote.traceId)?.events;
-
-          return (
-            open.event === undefined ||
-            events?.findIndex((event) => event.id === quote.eventId) ===
-              open.event
-          );
-        };
+        const opens = (blockId: string, href: string) =>
+          anchors.get(`${blockId}:${href}`)?.id === open.anchorId;
 
         state.doc.forEach((block, offset) => {
           block.descendants((node, pos) => {

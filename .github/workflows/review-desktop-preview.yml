@@ -180,58 +180,19 @@ jobs:
           key: ${{ runner.os }}-code-oss-deps-v3-${{ steps.code-oss-inputs.outputs.digest }}
           restore-keys: |
             ${{ runner.os }}-code-oss-deps-v3-
-      - name: Check for published remote tarballs
-        if: ${{ !inputs.dry_run }}
-        id: existing
+      - name: Build the remote tarballs
         run: |
           mkdir -p remote-artifacts
-          FOUND=0
-          for t in linux-x64 linux-arm64; do
-            NAME="whiteboard-remote-${VERSION}-${t}.tar.xz.sha256"
-            STATUS=$(curl -sS --retry 3 --retry-all-errors -o "remote-artifacts/$NAME" -w '%{http_code}' "https://install.dev.fast/releases/${VERSION}/remote/$NAME")
-            case "$STATUS" in
-              200) FOUND=$((FOUND + 1)) ;;
-              404) rm -f "remote-artifacts/$NAME" ;;
-              *) echo "::error::${NAME} answered ${STATUS}" >&2; exit 1 ;;
-            esac
-          done
-          if [ "$FOUND" = 1 ]; then
-            echo "::error::Only one remote tarball for ${VERSION} is published; fix releases/${VERSION}/remote/ on R2 by hand." >&2
-            exit 1
-          fi
-          echo "published=$([ "$FOUND" = 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      - name: Build the remote tarballs
-        if: ${{ steps.existing.outputs.published != 'true' }}
-        run: |
           source apps/review-desktop/scripts/code-oss-dependencies.sh
           ensure_code_oss_dependencies "$PWD/apps/review-desktop" "$PWD/apps/review-desktop/code-oss"
           node apps/review-desktop/scripts/build-remote-tarball.mjs --target linux-x64 --target linux-arm64 \
             --out remote-artifacts --version "$VERSION" --commit "$COMMIT"
           cp packages/review/remote/install.sh remote-artifacts/install.sh
-      # Payloads before the pin: no Desktop build may pin a tarball R2 lacks.
-      - name: Upload the remote tarballs to R2
-        if: ${{ !inputs.dry_run && steps.existing.outputs.published != 'true' }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_ENDPOINT_URL: ${{ vars.R2_ENDPOINT_URL }}
-          AWS_REGION: auto
-          R2_BUCKET: ${{ vars.R2_RELEASE_BUCKET }}
-        run: |
-          PREFIX="s3://${R2_BUCKET}/releases/${VERSION}/remote/"
-          aws s3 cp remote-artifacts/ "$PREFIX" --recursive --exclude "*" --include "*.tar.xz" --content-type application/x-xz
-          aws s3 cp remote-artifacts/ "$PREFIX" --recursive --exclude "*" --include "*.sha256" --content-type text/plain
-          aws s3 cp remote-artifacts/install.sh "${PREFIX}install.sh" --content-type text/plain
-      # Platform builds start before this job ends and wait for this pin only
-      # when they package (wait-for-run-artifact.mjs).
-      - name: Pin the remote tarballs
-        run: |
-          mkdir -p remote-pin
-          node apps/review-desktop/scripts/stamp-remote-artifacts.mjs remote-artifacts "$VERSION" "https://install.dev.fast/releases/${VERSION}/remote" > remote-pin/pin.json
+      # Hosts install from a release base the user serves; see docs/remote-hosts.md.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: whiteboard-remote-pin-${{ env.VERSION }}
-          path: remote-pin/pin.json
+          name: whiteboard-remote-${{ env.VERSION }}
+          path: remote-artifacts
           overwrite: true
 
   npm:

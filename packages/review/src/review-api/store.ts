@@ -12,6 +12,7 @@ import {
   boardIconKind,
   boardTitle,
 } from "@dev.fast/review-protocol";
+import { repositoryIdentity } from "@dev.fast/review-share-protocol";
 import {
   type ActivitySurface,
   type Applied,
@@ -26,6 +27,7 @@ import {
   ReviewInputError,
   type ReviewTarget,
   type SourcePins,
+  TRACE_QUOTES_UNSUPPORTED,
   type WrittenComponent,
   adoptFlowUnits,
   anchorPins,
@@ -55,6 +57,7 @@ import {
   sourceAnchors,
   sourceReferences,
   summarizeEdit,
+  traceQuoteReferences,
   updateCoverage,
 } from "@dev.fast/whiteboard-document";
 import type { GitHubPullRequest } from "@review/github-pr-graph.js";
@@ -73,7 +76,12 @@ import {
   dependencyCycle,
   orderSiblings,
 } from "./board-order.js";
-import { CheckoutGroups, remoteGroup } from "./checkout-groups.js";
+import {
+  CheckoutGroups,
+  remoteGroup,
+  repositoryOriginAt,
+} from "./checkout-groups.js";
+import { ExcerptSources } from "./excerpt-sources.js";
 import { type BoardLinkPreview, boardLinkPreview } from "./link-preview.js";
 import {
   pullRequestKey,
@@ -81,6 +89,7 @@ import {
   setPullRequest,
   sourceBranchName,
 } from "./origin.js";
+import { ReviewComments } from "./review-comments.js";
 import { upgradeStore } from "./store-migrations.js";
 import {
   BOARD_REPOSITORY_ID_SQL,
@@ -518,6 +527,8 @@ export interface ReviewProviders {
 export class ReviewStore {
   readonly activity: ReviewActivity;
   readonly askHistory: AskHistory;
+  readonly comments: ReviewComments;
+  readonly excerpts: ExcerptSources;
   private readonly db: DatabaseSync;
   private pending: Promise<unknown> = Promise.resolve();
   private readonly preparing = new Set<Promise<unknown>>();
@@ -795,6 +806,10 @@ export class ReviewStore {
     this.askHistory = new AskHistory(this.db, (id) =>
       this.assertOutOfTrash(id),
     );
+    this.comments = new ReviewComments(this.db, (id) =>
+      this.assertOutOfTrash(id),
+    );
+    this.excerpts = new ExcerptSources(this.db);
 
     this.purgeExpired();
     this.purgeTimer = setInterval(() => this.purgeExpired(), 60_000);
@@ -1138,6 +1153,42 @@ export class ReviewStore {
 
     if (!key) return [];
 
+    return this.byLastUse(
+      this.repositories()
+        .filter((repository) => {
+          try {
+            return this.repositoryGroup(repository.path)?.key === key;
+          } catch {
+            return false;
+          }
+        })
+        .map((repository) => repository.id),
+    );
+  }
+
+  /** Checkouts whose origin names the same repository as `url`, most
+   * recently used first. Unlike `checkoutsOf`, a port or the path's case
+   * tells two repositories on one host apart, so a shared board's commits
+   * are fetched only from the repository it names. */
+  checkoutsOfRemote(url: string): string[] {
+    const identity = repositoryIdentity(url);
+
+    if (!identity) return [];
+
+    return this.byLastUse(
+      this.repositories()
+        .filter((repository) => {
+          const origin = repositoryOriginAt(repository.path);
+
+          return (
+            origin !== undefined && repositoryIdentity(origin) === identity
+          );
+        })
+        .map((repository) => repository.id),
+    );
+  }
+
+  private byLastUse(repositoryIds: string[]): string[] {
     const used = (repositoryId: string) =>
       String(
         this.db
@@ -1149,15 +1200,8 @@ export class ReviewStore {
           .get(repositoryId)?.at ?? "",
       );
 
-    return this.repositories()
-      .filter((repository) => {
-        try {
-          return this.repositoryGroup(repository.path)?.key === key;
-        } catch {
-          return false;
-        }
-      })
-      .map((repository) => ({ id: repository.id, at: used(repository.id) }))
+    return repositoryIds
+      .map((id) => ({ id, at: used(id) }))
       .sort((left, right) => right.at.localeCompare(left.at))
       .map((repository) => repository.id);
   }
@@ -1300,6 +1344,7 @@ export class ReviewStore {
     ])
       this.db.prepare(`DELETE FROM ${table} WHERE review_id=?`).run(id);
     this.askHistory.removeReview(id);
+    this.comments.removeReview(id);
     // Its children move up to top level, its dependencies and the links
     // on it go, by the schema's foreign keys. Links into it stay, and the
     // tombstone shows it as deleted, in the project it was in.
@@ -1527,24 +1572,6 @@ export class ReviewStore {
     }));
   }
 
-  /** Two saved board/day pairs in the last fourteen days. */
-  feedbackEligible(now = Date.now()): boolean {
-    const row = this.db
-      .prepare(`SELECT count(*) AS pairs FROM (
-        SELECT DISTINCT review_id, date(json_extract(snapshot, '$.createdAt')) AS utc_date
-        FROM versions
-        WHERE (version = 0 OR json_type(snapshot, '$.lastEdit') = 'object')
-          AND julianday(json_extract(snapshot, '$.createdAt')) BETWEEN julianday(?) AND julianday(?)
-        LIMIT 2
-      )`)
-      .get(
-        new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString(),
-        new Date(now).toISOString(),
-      );
-
-    return Number(row?.pairs) >= 2;
-  }
-
   history(id: string): HistoryEntry[] {
     return this.db
       .prepare(
@@ -1612,46 +1639,6 @@ export class ReviewStore {
     ).then((source) => this.applyPreparedCommand(source, initial, author));
 
     return this.track(prepared);
-  }
-
-  /** Replaces a share copy's content under the same board id; 409 once it moved past `baseVersion`. */
-  refreshCopy(
-    reviewId: string,
-    baseVersion: number,
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Command boundary: commandSchema.parse below rejects malformed input before mutation.
-    create: unknown,
-    seed: Seed,
-  ): Promise<Result> {
-    if (this.closing)
-      return Promise.reject(new Error("Review store is closing."));
-    const command = commandSchema.parse(create);
-    const op = command.operation;
-
-    if (
-      op.type !== "create" ||
-      op.pullRequestUrl ||
-      op.parentId ||
-      op.dependsOn ||
-      op.projectId
-    )
-      throw new ReviewInputError(
-        "A refresh takes a create command with a title and target alone.",
-      );
-    const person: Author = { kind: "person" };
-
-    return this.track(
-      this.prepareCommand(
-        command,
-        undefined,
-        Promise.resolve(undefined),
-        person,
-      ).then((source) =>
-        this.applyPreparedCommand(source, seed, person, {
-          reviewId,
-          baseVersion,
-        }),
-      ),
-    );
   }
 
   private track(prepared: Promise<Result>) {
@@ -2349,10 +2336,12 @@ export class ReviewStore {
     // Check cross-references here; do not reparse the whole stored document.
     checkReferences(snapshot.document);
 
-    // A restore may bring back links to deleted boards, and a copy links to
-    // boards on another machine, so skip the check.
-    if (!options.restore && !options.copied)
+    // A restore may bring back links to deleted boards and old trace quotes,
+    // and a copy links to boards on another machine, so skip the checks.
+    if (!options.restore && !options.copied) {
       this.checkBoardLinks(snapshot, previous, options.person);
+      rejectNewTraceQuotes(snapshot.document, previous?.document ?? []);
+    }
 
     if (
       snapshot.pins &&
@@ -3726,6 +3715,23 @@ export class ReviewStore {
 
     return warnings.sort();
   }
+}
+
+/** Stored boards keep their trace quotes, but a write cannot add one: trace
+ * support is gone. */
+function rejectNewTraceQuotes(document: Block[], previous: Block[]): void {
+  const kept = new Set(traceQuoteReferences(previous).map(quoteKey));
+
+  if (
+    traceQuoteReferences(document).some((quote) => !kept.has(quoteKey(quote)))
+  )
+    throw new ReviewInputError(TRACE_QUOTES_UNSUPPORTED);
+}
+
+function quoteKey(block: Block): string {
+  return block.type === "trace_quote"
+    ? JSON.stringify([block.traceId, block.eventId, block.text])
+    : "";
 }
 
 /** The highest number in a document's `prefix-N` ids, units included. */

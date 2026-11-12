@@ -18,22 +18,13 @@ import { commandSchema } from "./store.js";
 /** The host publishes its input schemas, except where agents write less than
  * the host accepts (publishedEdits, publishedLensEditSchema) or name a
  * checkout by path (pathTargetSchema); adapters validate nothing. */
-export function authoringTools(
-  traceEnabled = false,
-  animationsEnabled = false,
-) {
+export function authoringTools(animationsEnabled = false) {
   const id = z.string().min(1);
   const review = { reviewId: id };
 
-  // Anthropic rejects a top-level union, so publish one object; the host validates the union.
-  const [image, trace] = uploadSchema.options;
+  const [image] = uploadSchema.options;
 
-  const uploadInput = z
-    .strictObject({
-      ...image.shape,
-      ...trace.shape,
-      kind: z.enum(["image", "trace"]),
-    })
+  const uploadInput = image
     .omit({ repositoryId: true })
     .extend({ repositoryPath: id })
     .partial()
@@ -103,17 +94,12 @@ export function authoringTools(
     ),
     tool(
       "get_instructions",
-      'Read Whiteboard\'s guidance before creating or editing a review. The default topic gives the authoring workflow; "file-lenses" covers Diff-view file lenses.' +
-        (traceEnabled
-          ? ' Call review_get_instructions({topic:"trace-archaeology"}) for why code exists, what an agent was thinking, or whether an agent solved this before.'
-          : ""),
+      'Read Whiteboard\'s guidance before creating or editing a review. The default topic gives the authoring workflow; "file-lenses" covers Diff-view file lenses.',
       instructionsQuerySchema
         .extend({
           topic: animationsEnabled
             ? instructionsQuerySchema.shape.topic
-            : z
-                .enum(["authoring", "file-lenses", "trace-archaeology"])
-                .default("authoring"),
+            : z.enum(["authoring", "file-lenses"]).default("authoring"),
         })
         .partial(),
       "GET",
@@ -207,6 +193,13 @@ export function authoringTools(
       "/:reviewId/lenses",
     ),
     tool(
+      "comments_list",
+      "List the reviewer's comments on the whiteboard: each with its Markdown body, author, whether it is resolved, its parent for a reply, a hash that changes when the body or anchor changes, and its anchor. A source anchor names the repository remote, the file, the side (head or base), the 1-based lines and the full commit; a document anchor names a block and a quote. Read-only.",
+      z.strictObject(review),
+      "GET",
+      "/:reviewId/comments",
+    ),
+    tool(
       "history",
       "List saved document versions.",
       z.strictObject(review),
@@ -236,7 +229,7 @@ export function authoringTools(
     ),
     tool(
       "upload",
-      'Retain an image or trace for use in a review. kind:"image" takes base64; kind:"trace" takes trace. Reusing an upload ID requires identical content; rejected uploads are not saved.',
+      'Retain an image for use in a review. kind:"image" takes base64. Reusing an upload ID requires identical content; rejected uploads are not saved.',
       uploadInput,
       "POST",
       "/resources",

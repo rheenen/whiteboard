@@ -411,7 +411,6 @@ async function cli(argv: string[], change: NodeJS.ProcessEnv = {}) {
       PATH: process.env.PATH,
       HOME: home,
       DEV_REVIEW_HOME: stateDir,
-      DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
       DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",
       ...change,
     },

@@ -3,16 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  MAX_SHARE_BYTES,
-  createShareSchema,
-} from "@dev.fast/review-share-protocol";
-import { ReviewInputError } from "@dev.fast/whiteboard-document";
-import { traceSchema } from "@review/review-api/trace-schema.js";
 import { afterEach, expect, it } from "vitest";
 
 import { createShareFixture } from "../../test/fixtures/share/create.js";
-import { exportShare, shareRequestBody } from "./export.js";
+import { exportShare } from "./export.js";
+import { parseWhiteboardFile, whiteboardFileText } from "./file.js";
 import { validateShareBundle } from "./import.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -37,16 +32,14 @@ it("carries the board, its resources, commits, resolved selections and exactly t
   const shared = await fixture();
   const { pins } = shared.store.read(shared.reviewId);
 
-  const { bundle } = createShareSchema.parse(
-    JSON.parse(shareRequestBody(await exportShare(shared), randomUUID())),
+  const bundle = parseWhiteboardFile(
+    whiteboardFileText(await exportShare(shared)),
   );
 
   expect(bundle.snapshot).not.toHaveProperty("target");
   expect(bundle.repository).toEqual(shared.repository);
   expect(bundle.images).toEqual({});
-  expect(Object.values(bundle.traces)).toEqual([
-    expect.objectContaining({ label: "Why the answer changed" }),
-  ]);
+  expect(bundle.traces).toEqual({});
   expect(Object.values(bundle.maps)).toEqual([
     expect.objectContaining({ side: "head", commit: pins!.head }),
   ]);
@@ -104,35 +97,31 @@ it("carries the board, its resources, commits, resolved selections and exactly t
   });
 });
 
-it("refuses a bundle past the upload limit", async () => {
+it("opens a bundle from a build with trace capture, ignoring its traces", async () => {
   const shared = await fixture();
   const bundle = await exportShare(shared);
-  bundle.traces.large = "x".repeat(MAX_SHARE_BYTES);
+  const traceId = randomUUID();
+  // SAFETY: an exported snapshot carries its document as an array of blocks.
+  const document = bundle.snapshot.document as unknown[];
 
-  expect(() => shareRequestBody(bundle, randomUUID())).toThrow(
-    ReviewInputError,
-  );
-});
+  const old = {
+    ...bundle,
+    snapshot: {
+      ...bundle.snapshot,
+      document: [
+        ...document,
+        {
+          type: "trace_quote",
+          traceId,
+          eventId: "response",
+          text: "The answer is 42.",
+        },
+      ],
+    },
+    traces: { [traceId]: { label: "Anything", events: "not a trace" } },
+  };
 
-it("checks every quote against its trace and opens only shares that name their repository", async () => {
-  const shared = await fixture();
-  const bundle = await exportShare(shared);
-  const [traceId] = Object.keys(bundle.traces);
-  const trace = traceSchema.parse(structuredClone(bundle.traces[traceId!]));
-
-  const original = trace.events[1]!.text;
-  trace.events[1]!.text = "Something else";
-  expect(() =>
-    validateShareBundle({ ...bundle, traces: { [traceId!]: trace } }),
-  ).toThrow("quote does not match");
-  trace.events[1]!.text = original;
-  trace.events.push({ ...trace.events[0]! });
-  expect(() =>
-    validateShareBundle({ ...bundle, traces: { [traceId!]: trace } }),
-  ).toThrow("Duplicate shared trace event");
-
-  const { repository: _repository, ...browserOnly } = bundle;
-  expect(() => validateShareBundle(browserOnly)).toThrow(
-    "This share can only be viewed in the browser.",
+  expect(validateShareBundle(old).snapshot.document).toContainEqual(
+    expect.objectContaining({ type: "trace_quote", traceId }),
   );
 });

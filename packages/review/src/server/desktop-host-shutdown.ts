@@ -3,7 +3,6 @@ import {
   type ReviewGatewayHost,
   ReviewGatewayHostSchema,
   isJsonObject,
-  jsonBoolean,
   jsonProperty,
   jsonString,
 } from "@dev.fast/review-protocol";
@@ -33,7 +32,6 @@ export function postToDesktop(
 export function listenForDesktopHostShutdown(
   hostProcess: DesktopHostProcess,
   onShutdown: () => void,
-  onTelemetrySetting?: (enabled: boolean) => void,
   onStageRustAnalyzer?: (path: string) => void,
   onRemoteHosts?: (hosts: ReviewGatewayHost[]) => void,
 ): () => void {
@@ -43,14 +41,6 @@ export function listenForDesktopHostShutdown(
 
     if (type === "shutdown") {
       onShutdown();
-
-      return;
-    }
-
-    if (type === "telemetry-setting") {
-      const enabled = jsonBoolean(jsonProperty(message, "enabled"));
-
-      if (enabled !== undefined) onTelemetrySetting?.(enabled);
 
       return;
     }

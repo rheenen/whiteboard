@@ -1,21 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { Writable } from "node:stream";
 
-import {
-  type SharedMeta,
-  parseShareLink,
-  shareBundleSchema,
-  shareIdSchema,
-} from "@dev.fast/review-share-protocol";
-import {
-  DEFAULT_STORE_ORIGIN,
-  clearStoreAuth,
-  type openUrlInBrowser,
-  readStoreAuth,
-  runStoreLogin,
-} from "@dev.fast/trace-core";
+import { shareBundleSchema } from "@dev.fast/review-share-protocol";
 import { ReviewInputError } from "@dev.fast/whiteboard-document";
 import type { LocalReviewData } from "@review/review-api/local-data.js";
 import type { ReviewStore } from "@review/review-api/store.js";
@@ -23,8 +9,6 @@ import { readBoundedRequestJson } from "@review/server/hono-http.js";
 import type { Hono } from "hono";
 import { z } from "zod";
 
-import { readSharingAuth } from "./auth.js";
-import { ShareAuthError, ShareClient, ShareRequestError } from "./client.js";
 import { exportShare, validateShareSources } from "./export.js";
 import {
   parseWhiteboardFile,
@@ -33,25 +17,16 @@ import {
   whiteboardFileText,
 } from "./file.js";
 import {
+  MissingCheckoutError,
   type ShareImport,
   importShare,
   needsRepository,
-  planShareCopy,
-  receiveShare,
-  shareKey,
 } from "./import.js";
 import {
-  type cloneSharedRepository,
-  type fetchPinnedRepository,
+  cloneForReader,
   readShareRepository,
+  repositoryName,
 } from "./repository.js";
-
-interface LoginState {
-  pending: boolean;
-  url?: string;
-  userCode?: string;
-  error?: string;
-}
 
 const publishSchema = z.strictObject({
   reviewId: z.string().min(1),
@@ -59,133 +34,47 @@ const publishSchema = z.strictObject({
   requestId: z.uuid().optional(),
 });
 
-/** Where the host reports sharing and sign-in outcomes, for telemetry. */
-export interface SharingHostEvents {
-  onPublished?: (event: { reviewId: string; version: number }) => void;
-  onRevoked?: (event: { shareId: string }) => void;
-  onLogin?: (
-    outcome: "started" | "succeeded" | "failed",
-    reason?: "did_not_finish" | "error",
-  ) => void;
-}
-
-interface SharingHostOptions extends SharingHostEvents {
+interface SharingHostOptions {
   readRepository?: typeof readShareRepository;
-  fetchRepository?: typeof fetchPinnedRepository;
-  cloneRepository?: typeof cloneSharedRepository;
-  login?: typeof runStoreLogin;
-  openUrl?: typeof openUrlInBrowser;
-  fetch?: typeof fetch;
   remoteShare?: RemoteShare;
 }
 
-const importSchema = z.union([
-  z.strictObject({ url: z.string().max(2048) }),
-  z.strictObject({ path: z.string().min(1).max(4096) }),
-]);
+const importSchema = z.strictObject({
+  path: z.string().min(1).max(4096),
+  /** Open without a checkout, on the lines the file carries. */
+  readOnly: z.boolean().optional(),
+});
+
+const cloneSchema = z.strictObject({
+  url: z.string().min(1).max(2048),
+  /** The folder to clone into, and the new folder's name in it. */
+  parent: z.string().min(1).max(4096),
+  name: z.string().min(1).max(255),
+});
 
 interface ImportStatus {
-  stage:
-    | "downloading"
-    | "reading"
-    | "fetching"
-    | "validating"
-    | "ready"
-    | "error";
+  stage: "reading" | "fetching" | "validating" | "ready" | "error";
   /** The copy, once it is made. */
   reviewId?: string;
   error?: string;
+  /** The file needs a checkout of this repository; Desktop offers to clone
+   * it, or to open the file read-only. */
+  missingCheckout?: { remote?: string; name: string };
 }
 
-/** Mounted behind local host authentication. Account credentials never enter the renderer. */
+/** Exports and opens `.whiteboard` files. Mounted behind local host
+ * authentication. */
 export function mountSharingHost(
   app: Hono,
   store: ReviewStore,
   data: LocalReviewData,
   options: SharingHostOptions = {},
 ) {
-  const startLogin = options.login ?? runStoreLogin;
-
-  let login: LoginState = {
-    pending: false,
-  };
-
-  let warmedAt = 0;
-
-  const readAccount = async () => {
-    const account = await readStoreAuth();
-
-    // An open review may be shared next; keep its upload off a cold start.
-    if (account && Date.now() - warmedAt > 60_000) {
-      warmedAt = Date.now();
-      void new ShareClient(account.origin, account.token, options.fetch)
-        .warm()
-        .catch(() => {});
-    }
-
-    return {
-      account: account
-        ? {
-            login: account.login,
-            origin: account.origin,
-            email: account.email,
-            githubLogin: account.githubLogin,
-          }
-        : null,
-      ...login,
-    };
-  };
-
-  app.get("/sharing/account", async (context) =>
-    context.json(await readAccount()),
-  );
-  app.post("/sharing/logout", async (context) => {
-    await clearStoreAuth();
-
-    return context.json(await readAccount());
-  });
-  app.post("/sharing/login", async (context) => {
-    if (!login.pending) {
-      login = { pending: true };
-      options.onLogin?.("started");
-
-      const discard = new Writable({
-        write(_chunk, _encoding, done) {
-          done();
-        },
-      });
-
-      void startLogin({
-        traces: false,
-        stdout: discard,
-        stderr: discard,
-        openUrl: options.openUrl,
-        onDeviceCode: (device) => {
-          Object.assign(login, device);
-        },
-      })
-        .then((code) => {
-          login = { pending: false };
-
-          if (code) login.error = "Sign-in did not finish. Try again.";
-          options.onLogin?.(
-            code ? "failed" : "succeeded",
-            code ? "did_not_finish" : undefined,
-          );
-        })
-        .catch(() => {
-          login = { pending: false, error: "Sign-in failed. Try again." };
-          options.onLogin?.("failed", "error");
-        });
-    }
-
-    return context.json(login);
-  });
   mountSharingPublisher(app, store, data, options);
 
   const imports = new Map<string, ImportStatus>();
 
-  // One download at a time, so two links of one repository clone it once.
+  // One import at a time, so two files of one repository fetch it once.
   let importing = Promise.resolve();
 
   const serially = (task: () => Promise<string>) => {
@@ -204,7 +93,7 @@ export function mountSharingHost(
 
     const { reviewId = id, ...status } = imports.get(id) ?? {
       stage: "error" as const,
-      error: "Shared review is not available.",
+      error: "This whiteboard file is not being opened.",
     };
 
     return context.json({
@@ -217,21 +106,21 @@ export function mountSharingHost(
   const shareInput = (onStage: ShareImport["onStage"]): ShareImport => ({
     store,
     data,
-    fetchRepository: options.fetchRepository,
-    cloneRepository: options.cloneRepository,
     onStage,
   });
 
+  // The remotes a file asked for, the only ones Desktop may clone here.
+  const offeredRemotes = new Set<string>();
+
   const startImport = (
     id: string,
-    initial: "downloading" | "reading",
     receive: (onStage: ShareImport["onStage"]) => Promise<string>,
   ) => {
     const known = imports.get(id)?.stage;
 
-    // A finished import asks again: its link may serve a newer revision.
+    // A finished import may run again: the file may have changed.
     if (!known || known === "ready" || known === "error") {
-      const status: ImportStatus = { stage: initial };
+      const status: ImportStatus = { stage: "reading" };
 
       imports.set(id, status);
       receive((stage) => {
@@ -243,11 +132,19 @@ export function mountSharingHost(
         })
         .catch((error) => {
           status.stage = "error";
+
+          if (error instanceof MissingCheckoutError) {
+            if (error.remote) offeredRemotes.add(error.remote);
+            status.missingCheckout = {
+              ...(error.remote && { remote: error.remote }),
+              name: error.remote ? repositoryName(error.remote) : "repository",
+            };
+          }
+
           status.error =
-            error instanceof ReviewInputError ||
-            (error instanceof ShareRequestError && error.status !== 404)
+            error instanceof ReviewInputError
               ? error.message
-              : "This share is unavailable, revoked, or could not be read.";
+              : "This whiteboard file could not be read.";
         });
     }
 
@@ -256,100 +153,65 @@ export function mountSharingHost(
     return { reviewId: id, ...status };
   };
 
+  /** Clones a repository a file asked for into a folder the reader chose,
+   * and opens it in Whiteboard. */
+  app.post("/sharing/clone", async (context) => {
+    const input = cloneSchema.parse(
+      await readBoundedRequestJson(context.req.raw),
+    );
+
+    if (!offeredRemotes.has(input.url))
+      throw new ReviewInputError(
+        "Open the whiteboard file again, then clone its repository.",
+        409,
+      );
+
+    if (!path.isAbsolute(input.parent))
+      throw new ReviewInputError("Use an absolute folder path.", 400);
+
+    const root = await cloneForReader(input.parent, input.name, input.url);
+    const repository = await data.register(root);
+
+    return context.json({ path: root, repositoryId: repository.id });
+  });
+
   app.post("/sharing/import", async (context) => {
     const input = importSchema.parse(
       await readBoundedRequestJson(context.req.raw),
     );
 
-    if ("path" in input) {
-      if (!path.isAbsolute(input.path))
-        throw new ReviewInputError("Use an absolute file path.", 400);
+    if (!path.isAbsolute(input.path))
+      throw new ReviewInputError("Use an absolute file path.", 400);
 
-      const text = await readFile(input.path, "utf8").catch(() => {
-        throw new ReviewInputError(
-          `Could not read ${path.basename(input.path)}. Check that the file still exists and Whiteboard can open it.`,
-          400,
-        );
-      });
-
-      const key = whiteboardFileKey(text);
-      const copy = () => store.copiesOf(key)[0]?.reviewId;
-
-      return context.json(
-        startImport(
-          key,
-          "reading",
-          async (onStage) =>
-            copy() ??
-            serially(
-              async () =>
-                copy() ??
-                importShare(
-                  shareInput(onStage),
-                  key,
-                  parseWhiteboardFile(text),
-                ),
-            ),
-        ),
-        202,
-      );
-    }
-
-    const parsed = parseShareLink(input.url);
-    const account = await readStoreAuth();
-
-    if (
-      parsed.origin !== DEFAULT_STORE_ORIGIN &&
-      parsed.origin !== account?.origin
-    )
+    const text = await readFile(input.path, "utf8").catch(() => {
       throw new ReviewInputError(
-        "This share uses an untrusted service. Sign in to that service before opening its links.",
+        `Could not read ${path.basename(input.path)}. Check that the file still exists and Whiteboard can open it.`,
         400,
       );
+    });
 
-    const { origin, capability, revision } = parsed;
-    const key = shareKey(origin, capability);
-    const client = new ShareClient(origin, undefined, options.fetch);
+    // A read-only copy is its own: a later import on a checkout makes
+    // an ordinary one.
+    const key = `${whiteboardFileKey(text)}${input.readOnly ? ":read-only" : ""}`;
+    const copy = () => store.copiesOf(key)[0]?.reviewId;
 
     return context.json(
       startImport(
-        revision ? `${key}-${revision}` : key,
-        "downloading",
-        async (onStage) => {
-          let meta: SharedMeta;
-
-          try {
-            meta = await client.shared(capability, revision);
-          } catch (error) {
-            // Offline, the copy the link prefers still opens.
-            const copies = store.copiesOf(key);
-
-            const copy =
-              copies.find(({ shared }) =>
-                revision ? shared.revisionId === revision : !shared.pinned,
-              ) ?? copies[0];
-
-            if (!copy) throw error;
-
-            return copy.reviewId;
-          }
-
-          const pinned = revision !== undefined;
-          const plan = planShareCopy(store.copiesOf(key), meta, pinned);
-
-          // receiveShare plans again: the queue may have made a copy since.
-          return plan.kind === "open"
-            ? plan.reviewId
-            : serially(() =>
-                receiveShare(
-                  shareInput(onStage),
-                  key,
-                  meta,
-                  () => client.download(capability, meta.revision.id),
-                  pinned,
-                ),
-              );
-        },
+        key,
+        async (onStage) =>
+          copy() ??
+          serially(
+            async () =>
+              copy() ??
+              importShare(
+                {
+                  ...shareInput(onStage),
+                  readOnly: input.readOnly,
+                },
+                key,
+                parseWhiteboardFile(text),
+              ),
+          ),
       ),
       202,
     );
@@ -402,15 +264,12 @@ export function remoteShare(
       : undefined;
 }
 
-/** Publishing needs only an authored store, never Desktop or recipient workspaces. */
+/** Exporting needs only an authored store, never Desktop or recipient workspaces. */
 export function mountSharingPublisher(
   app: Hono,
   store: ReviewStore,
   data: LocalReviewData,
-  options: Pick<
-    SharingHostOptions,
-    "readRepository" | "fetch" | "onPublished" | "onRevoked" | "remoteShare"
-  > = {},
+  options: Pick<SharingHostOptions, "readRepository" | "remoteShare"> = {},
 ) {
   const prepareLocal = async (
     input: z.infer<typeof publishSchema>,
@@ -440,7 +299,7 @@ export function mountSharingPublisher(
 
     const verified = await repository;
 
-    if (verified) bundle.repository = verified;
+    if (verified) Object.assign(bundle, verified);
 
     return {
       title: snapshot.title,
@@ -453,7 +312,7 @@ export function mountSharingPublisher(
   const prepare = (input: z.infer<typeof publishSchema>) =>
     options.remoteShare?.(input) ?? prepareLocal(input);
 
-  // Desktop uploads it with its own login.
+  // A remote board's host prepares it; Desktop writes the file.
   app.post("/:id/share-bundle", async (context) => {
     const { version } = publishSchema
       .pick({ version: true })
@@ -468,111 +327,18 @@ export function mountSharingPublisher(
       publishSchema.parse(await readBoundedRequestJson(context.req.raw)),
     );
 
-    // A link falls back to the browser viewer; a file has no such reader.
     if (bundle.frozen)
       throw new ReviewInputError(
         "Commit your changes to export this whiteboard as a file.",
       );
-    else if (!bundle.repository && needsRepository)
+    else if (!bundle.repository && !bundle.remote && needsRepository)
       throw new ReviewInputError(
-        "Exporting pinned code needs a GitHub remote the file's reader can fetch from.",
+        "Exporting pinned code needs an https or ssh origin remote the file's reader can fetch from.",
       );
 
     return context.json({
       filename: whiteboardFileName(title),
       text: whiteboardFileText(bundle),
     });
-  });
-  app.post("/sharing/publish", async (context) => {
-    const input = publishSchema.parse(
-      await readBoundedRequestJson(context.req.raw),
-    );
-
-    const account = await readSharingAuth();
-
-    if (!account)
-      throw new ReviewInputError(
-        "Set DEV_REVIEW_SHARE_TOKEN for CI, or run whiteboard login before sharing.",
-        409,
-      );
-
-    const { bundle, version } = await prepare(input);
-
-    try {
-      const result = await new ShareClient(
-        account.origin,
-        account.token,
-        options.fetch,
-      ).create(bundle, input.requestId ?? randomUUID());
-
-      const url = new URL(result.url);
-
-      if (
-        process.env.DEV_FAST_REVIEW_APP_URL_PROTOCOL ===
-        "dev-fast-review-preview"
-      )
-        url.searchParams.set("app", "preview");
-
-      options.onPublished?.({
-        reviewId: input.reviewId,
-        version,
-      });
-
-      return context.json({
-        ...result,
-        url: url.href,
-        version,
-      });
-    } catch (error) {
-      if (error instanceof ReviewInputError) throw error;
-
-      if (error instanceof ShareRequestError)
-        throw new ReviewInputError(error.message, 409);
-
-      if (error instanceof ShareAuthError) {
-        // A CI token lives in the environment; only the saved login can go stale.
-        if (process.env.DEV_REVIEW_SHARE_TOKEN === undefined)
-          await clearStoreAuth();
-        throw new ReviewInputError(
-          "Your sign-in has expired. Sign in again to share.",
-          401,
-        );
-      }
-
-      if (
-        error instanceof DOMException &&
-        (error.name === "TimeoutError" || error.name === "AbortError")
-      )
-        throw new ReviewInputError(
-          "The sharing request timed out. Please retry.",
-          409,
-        );
-
-      throw new ReviewInputError(
-        error instanceof TypeError
-          ? "Could not reach the sharing service. Check your connection, then retry."
-          : "The sharing service returned an unexpected response. Update Whiteboard or report this issue.",
-        409,
-      );
-    }
-  });
-  app.post("/sharing/revoke", async (context) => {
-    const { shareId } = z
-      .strictObject({ shareId: shareIdSchema })
-      .parse(await readBoundedRequestJson(context.req.raw));
-
-    const account = await readSharingAuth();
-
-    if (!account)
-      throw new ReviewInputError(
-        "Set DEV_REVIEW_SHARE_TOKEN for CI, or run whiteboard login first.",
-        409,
-      );
-    await new ShareClient(account.origin, account.token, options.fetch).revoke(
-      shareId,
-    );
-    options.onRevoked?.({ shareId });
-
-    return context.json({ shareId, revoked: true });
   });
 }

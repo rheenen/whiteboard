@@ -8,8 +8,6 @@ import {
   useMemo,
 } from "react";
 
-import type { AgentTraceStorage } from "./use-agent-trace";
-
 /**
  * Every canvas request goes to the local review API or the desktop bridge,
  * which answer without internet access and report failures of the remote
@@ -33,22 +31,6 @@ export function createCanvasQueryClient(): QueryClient {
 
 /** Desktop shares one client across boards, so board keys name the board. */
 export const canvasQueryKeys = {
-  sharingAccount: () => ["sharing", "account"] as const,
-  shareLink: (board: string) => ["sharing", "link", board] as const,
-  traceList: (
-    board: string,
-    version: number | undefined,
-    pins: { base: string; head: string } | undefined,
-    storage: AgentTraceStorage | null,
-  ) =>
-    ["agent-traces", board, version, pins?.base, pins?.head, storage] as const,
-  agentTrace: (
-    board: string,
-    sessionId: string | null | undefined,
-    trace: string | null | undefined,
-    storage: AgentTraceStorage | null | undefined,
-  ) =>
-    ["agent-trace", board, sessionId, trace ?? null, storage ?? null] as const,
   askThread: (threadId: string) => ["ask-thread", threadId] as const,
   diffFiles: (
     board: string,
@@ -69,6 +51,7 @@ export const canvasQueryKeys = {
   allPlace: (board: string) => ["place", board] as const,
   projectBoards: (board: string) => ["project-boards", board] as const,
   askThreads: (board: string) => ["ask-threads", board] as const,
+  comments: (board: string) => ["comments", board] as const,
   askAgents: (host: string) => ["ask-agents", host] as const,
   askBoards: (threadId: string | null, turns: number) =>
     ["ask-boards", threadId, turns] as const,

@@ -21,12 +21,10 @@ import type {
   ReviewLensSelection,
   ReviewNavigationRestore,
   ReviewPanelStore,
-  TraceSelection,
 } from "./review-panel-store";
 import { reviewPersistence } from "./review-persistence";
 import { removeReviewUiState, reviewUiStateKey } from "./review-ui-state";
 import { type ReviewView, offeredReviewViews } from "./review-view-route";
-import type { AgentTraceStorage } from "./use-agent-trace";
 
 const REVIEW_VIEW_STATE_NAMESPACE = "view-state";
 
@@ -45,8 +43,6 @@ export interface PersistedReviewViewState {
   overlayTour?: PersistedOverlayTour;
   /** The commit the diff was scoped to; restored while the version lists it. */
   diffScope?: { commit: string; file?: string };
-  trace?: TraceSelection;
-  traceStorage?: AgentTraceStorage;
   /** The view `scrollTop` was taken on; absent on older records ("review"). */
   scrollView?: ReviewView;
 }
@@ -84,9 +80,7 @@ export function useReviewViewStateSync({
           state.view === previous.view &&
           state.lens === previous.lens &&
           state.overlayTour === previous.overlayTour &&
-          state.diffScope === previous.diffScope &&
-          state.traceSelection === previous.traceSelection &&
-          state.traceStorage === previous.traceStorage
+          state.diffScope === previous.diffScope
         ) {
           return;
         }
@@ -104,16 +98,6 @@ export function useReviewViewStateSync({
           diffScope: state.diffScope
             ? { commit: state.diffScope.commit, file: state.diffScope.file }
             : undefined,
-          ...(state.traceSelection !== previous.traceSelection && {
-            trace: state.traceSelection
-              ? {
-                  sessionId: state.traceSelection.sessionId,
-                  trace: state.traceSelection.trace,
-                  eventIndex: state.traceSelection.eventIndex,
-                }
-              : undefined,
-          }),
-          traceStorage: state.traceStorage ?? undefined,
           overlayTour: state.overlayTour
             ? {
                 tourId: state.overlayTour.tourId,
@@ -151,8 +135,8 @@ export function useReviewViewStateSync({
 
 /** The navigation a canvas resumes: its stored view where the canvas still
  * offers it, its stored lens when that lens belongs to this version, the
- * commit its diff was scoped to while this version lists it, the picked
- * trace, and the fullscreen tour that was open. */
+ * commit its diff was scoped to while this version lists it, and the
+ * fullscreen tour that was open. */
 export function readReviewNavigationRestore(
   config: ReviewClientConfig,
   canvas: {
@@ -184,18 +168,14 @@ export function readReviewNavigationRestore(
 
   return {
     view: stored.activeView ?? "review",
-    // Traces are listed after mount; the canvas narrows this once they are.
     availableViews: offeredReviewViews({
       hasDiff: canvas.hasChangeRange,
       softwareMapEnabled: canvas.softwareMapEnabled,
-      hasTraceSessions: true,
     }),
     lens: stored.lens?.version === canvas.version ? stored.lens : null,
     diffScope: scoped
       ? { commit: scoped.commit, file: scoped.file, restoreFile: true }
       : null,
-    traceSelection: stored.trace,
-    traceStorage: stored.traceStorage ?? null,
     overlayTour: tour
       ? {
           tourId: tour.tourId,
@@ -438,29 +418,6 @@ function parsePersistedReviewViewState(
     const file = jsonString(diffScope && jsonProperty(diffScope, "file"));
     state.diffScope = file === undefined ? { commit } : { commit, file };
   }
-
-  const trace = jsonObject(jsonProperty(value, "trace"));
-  const sessionId = jsonString(trace && jsonProperty(trace, "sessionId"));
-
-  if (sessionId !== undefined) {
-    const id = jsonString(trace && jsonProperty(trace, "trace"));
-    const eventIndex = jsonNumber(trace?.eventIndex);
-    state.trace = {
-      sessionId,
-      trace: id,
-      eventIndex:
-        eventIndex !== undefined &&
-        Number.isInteger(eventIndex) &&
-        eventIndex >= 0
-          ? eventIndex
-          : undefined,
-    };
-  }
-
-  const traceStorage = jsonString(jsonProperty(value, "traceStorage"));
-
-  if (traceStorage === "s3" || traceStorage === "hosted")
-    state.traceStorage = traceStorage;
 
   const lens = parsePersistedLens(jsonObject(jsonProperty(value, "lens")));
 

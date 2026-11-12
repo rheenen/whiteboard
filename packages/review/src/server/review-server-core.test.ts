@@ -8,7 +8,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { openLocalReviewStore } from "@review/review-api/local-data.js";
-import { ReviewTelemetry } from "@review/review-telemetry.js";
 import { reviewServerDiscoveryPath } from "@review/server-discovery.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -26,7 +25,6 @@ const stops: (() => Promise<void>)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-server-core-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
   vi.stubEnv("SHELL", "");
 });
 
@@ -53,7 +51,6 @@ const servers = {
       toolingRoot: root,
       port: 0,
       discoveryPath: path.join(root, "desktop-server.json"),
-      telemetry: ReviewTelemetry.fromEnv(process.env),
     });
 
     stops.push(async () => {
@@ -424,7 +421,6 @@ function spawnSource(
     env: {
       ...process.env,
       ...env,
-      DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
       DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],

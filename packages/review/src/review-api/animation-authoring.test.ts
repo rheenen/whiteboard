@@ -32,7 +32,6 @@ it("gates animation authoring live, including stale MCP tools, while keeping sav
     undefined,
     undefined,
     undefined,
-    undefined,
     () => enabled,
   );
 
@@ -152,7 +151,6 @@ it("gates clips with animations", async () => {
 
   const app = createReviewApi(
     store,
-    undefined,
     undefined,
     undefined,
     undefined,

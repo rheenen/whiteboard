@@ -15,7 +15,7 @@ import test from "node:test";
 import type { ReviewGatewayHost } from "../../common/reviewProtocol.js";
 import { attachOutput, COMMIT, detectOutput, FAKE_SERVER_ID, fakeClock, fakeSsh, flush, healthServer, until, type FakeRemote } from "./test/fakeSsh.js";
 import { INSTALL_SCRIPT } from "./test/installScript.js";
-import { classifySshFailure, languageCommitMismatch, ReviewRemoteHost, type ReviewRemoteHostOptions, type ReviewRemoteInstallFlow, type ReviewRemoteInstallMode, type ReviewRemoteInstallRunInput } from "./reviewRemoteHost.js";
+import { classifySshFailure, languageCommitMismatch, ReviewRemoteHost, type ReviewRemoteHostOptions, type ReviewRemoteInstallFlow, type ReviewRemoteInstallMode, type ReviewRemoteInstallRunInput, withServicesOff } from "./reviewRemoteHost.js";
 import { ReviewRemoteNoTarball } from "./reviewRemoteArtifacts.js";
 import { openRemoteInstallConsent } from "./reviewRemoteInstallConsent.js";
 import type { ReviewRemoteInstallProgress, ReviewRemoteInstallResult } from "./reviewRemoteInstaller.js";
@@ -107,12 +107,12 @@ async function installFlow(
 			return INSTALLED;
 		},
 		script: async () => INSTALL_SCRIPT,
-		origin: () => (options.origin === null ? undefined : (options.origin ?? "https://install.dev.fast")),
+		origin: () => (options.origin === null ? undefined : (options.origin ?? "https://releases.example")),
 		artifact:
 			options.artifact ??
 			(async (target, version) => {
 				if (options.origin === null) throw new ReviewRemoteNoTarball();
-				return { name: `whiteboard-remote-${version}-${target}.tar.xz`, url: `https://install.dev.fast/${version}/${target}`, sha256: SHA256 };
+				return { name: `whiteboard-remote-${version}-${target}.tar.xz`, url: `https://releases.example/${version}/${target}`, sha256: SHA256 };
 			}),
 	};
 	return { flow, prompts, runs, consentFile };
@@ -159,6 +159,19 @@ test("the Desktop's enabled groups go to remote attach", async (t) => {
 	await until(() => last()?.endpoint !== undefined);
 
 	assert.match(ssh.of("wb-test-a", "exec")[0].input!, /exec "\$wb" remote attach --json --groups go\n$/);
+});
+
+test("remote attach turns sharing and usage data off for a host's own Whiteboard", async (t) => {
+	const port = await healthServer(t);
+	const { host, ssh, last } = hostFor(t, {}, port);
+
+	host.start();
+	await until(() => last()?.endpoint !== undefined);
+
+	const input = ssh.of("wb-test-a", "exec")[0].input!;
+	for (const assignment of ["DEV_REVIEW_DESKTOP_SHARING=off", "DEV_REVIEW_SHARING_DISABLED=1", "DEV_FAST_REVIEW_TELEMETRY_DISABLED=1", "DO_NOT_TRACK=1"]) {
+		assert.match(input, new RegExp(`^${assignment}$`, "m"));
+	}
 });
 
 test("a VS Code server of another commit leaves the review online without language features", async (t) => {
@@ -687,7 +700,7 @@ test("the version present: no prompt and no install shown; the installed CLI att
 	assert.equal(ssh.of("wb-test-a", "probe").length, 1);
 	assert.equal(
 		ssh.of("wb-test-a", "exec")[0].input,
-		`exec '${INSTALLED.nodePath}' '${INSTALLED.cliPath}' remote attach --json --replace --groups go\n`,
+		withServicesOff(`exec '${INSTALLED.nodePath}' '${INSTALLED.cliPath}' remote attach --json --replace --groups go\n`),
 	);
 });
 
@@ -716,7 +729,7 @@ test("the version absent with installs always: each step is reported, then the h
 	assert.equal(runs.length, 1);
 	assert.equal(runs[0].version, "0.1.6");
 	assert.equal(runs[0].target, "linux-arm64");
-	assert.deepEqual(runs[0].artifact, { name: "whiteboard-remote-0.1.6-linux-arm64.tar.xz", url: "https://install.dev.fast/0.1.6/linux-arm64", sha256: SHA256 });
+	assert.deepEqual(runs[0].artifact, { name: "whiteboard-remote-0.1.6-linux-arm64.tar.xz", url: "https://releases.example/0.1.6/linux-arm64", sha256: SHA256 });
 	assert.deepEqual(
 		reports.filter((report) => report.installing).map((report) => report.installing),
 		[
@@ -880,7 +893,7 @@ test("a host that lacks an install tool is unsupported before the question, and 
 
 test("a host that cannot reach the releases, or a build with no tarball, is not-installed without a question", async (t) => {
 	for (const [origin, probe, detail] of [
-		[undefined, { releasesReachable: false }, "wb-test-a cannot reach https://install.dev.fast."],
+		[undefined, { releasesReachable: false }, "wb-test-a cannot reach https://releases.example."],
 		[null, {}, "This dev build has no remote tarball; run `node apps/review-desktop/scripts/remote-dev-install.mjs wb-test-a` from the checkout or set DEV_FAST_REVIEW_REMOTE_RELEASES."],
 	] as const) {
 		const { flow, prompts, runs } = await installFlow(t, "ask", { origin });
@@ -908,7 +921,7 @@ test("with no checksum to compare, Desktop's version installed on the host attac
 	await until(() => last()?.endpoint !== undefined);
 
 	assert.deepEqual([prompts.length, runs.length], [0, 0]);
-	assert.equal(ssh.of("wb-test-a", "exec")[0].input, `exec '${INSTALLED.nodePath}' '${INSTALLED.cliPath}' remote attach --json --replace --groups go\n`);
+	assert.equal(ssh.of("wb-test-a", "exec")[0].input, withServicesOff(`exec '${INSTALLED.nodePath}' '${INSTALLED.cliPath}' remote attach --json --replace --groups go\n`));
 });
 
 test("a host with this version installed attaches without the install tools", async (t) => {
@@ -1106,25 +1119,4 @@ test("connecting runs the agents' commands with the installed CLI, and refuses a
 	const [connect] = ssh.of("wb-test-a", "connect");
 	assert.match(connect.input!, new RegExp(`exec '${INSTALLED.nodePath}' '${INSTALLED.cliPath}' 'connect' '--yes' '--json' 'pi'\n$`));
 	assert.deepEqual(await host.detectAgents(), [{ id: "pi", connected: true }]);
-});
-
-test("telemetry gets each change of connect outcome once", async (t) => {
-	const port = await healthServer(t);
-	const events: [string, Record<string, unknown>][] = [];
-	const { host, ssh, clock, last } = hostFor(t, {}, port, "wb-test-a", "/tmp/wb-ssh-test", undefined, "0.1.6", {
-		capture: (name, properties) => events.push([name, properties]),
-	});
-
-	host.start();
-	await until(() => last()?.endpoint !== undefined);
-	ssh.master("wb-test-a")!.finish(255, { stderr: "Connection to 127.0.0.1 closed by remote host.\n" });
-	await until(() => last()?.problem !== undefined);
-	assert.ok(clock.next());
-	await until(() => last()?.endpoint !== undefined);
-
-	assert.deepEqual(events, [
-		["remote_host_connected", { ok: true, direct: false }],
-		["remote_host_connected", { ok: false, problem: "unreachable", direct: false }],
-		["remote_host_connected", { ok: true, direct: false }],
-	]);
 });

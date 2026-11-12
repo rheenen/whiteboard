@@ -27,6 +27,7 @@ import {
 import {
   type Pins,
   ReviewInputError,
+  TRACE_QUOTES_UNSUPPORTED,
   elements,
   rangeAnchor,
 } from "@dev.fast/whiteboard-document";
@@ -1971,7 +1972,7 @@ it.skipIf(spawnSync("jj", ["--version"]).status !== 0)(
   },
 );
 
-it("decodes images and checks trace/map evidence before accepting components", async () => {
+it("decodes images and checks map evidence before accepting components", async () => {
   const review = await local.store.execute(
     command({
       type: "create",
@@ -2003,50 +2004,31 @@ it("decodes images and checks trace/map evidence before accepting components", a
     local.data.upload({ ...image, id: randomUUID(), base64: "not an image" }),
   ).rejects.toThrow(/valid single/);
 
-  const trace = {
-    id: randomUUID(),
-    repositoryId: pins.repositoryId,
-    kind: "trace",
-    trace: {
-      label: "Author",
-      events: [
-        { id: "answer", role: "assistant", text: "Keep the old components." },
-      ],
-    },
-  };
-
-  await local.data.upload(trace);
-  await insert(review.reviewId, {
-    type: "trace_quote",
-    traceId: trace.id,
-    eventId: "answer",
-    text: "old components",
-  });
-  await expect(
-    insert(review.reviewId, {
-      type: "trace_quote",
-      traceId: trace.id,
-      eventId: "answer",
-      text: "Redesign everything",
-    }),
-  ).rejects.toThrow(/does not match/);
-  await insert(review.reviewId, {
-    type: "markdown",
-    markdown: `A quote: [old components](review-trace:${trace.id}#answer).`,
-  });
-  await expect(
-    insert(review.reviewId, {
-      type: "markdown",
-      markdown: `[Redesign everything](review-trace:${trace.id}#answer)`,
-    }),
-  ).rejects.toThrow(/does not match/);
+  // Trace capture is retired: stored quotes stay, new ones are refused.
+  const traceId = randomUUID();
 
   await expect(
     local.data.upload({
-      ...trace,
-      trace: { ...trace.trace, label: "Different content" },
+      id: traceId,
+      repositoryId: pins.repositoryId,
+      kind: "trace",
+      trace: { label: "Author", events: [] },
     }),
-  ).rejects.toThrow(/already used/);
+  ).rejects.toThrow(Error);
+  await expect(
+    insert(review.reviewId, {
+      type: "trace_quote",
+      traceId,
+      eventId: "answer",
+      text: "old components",
+    }),
+  ).rejects.toThrow(TRACE_QUOTES_UNSUPPORTED);
+  await expect(
+    insert(review.reviewId, {
+      type: "markdown",
+      markdown: `A quote: [old components](review-trace:${traceId}#answer).`,
+    }),
+  ).rejects.toThrow(TRACE_QUOTES_UNSUPPORTED);
 
   const map = {
     id: randomUUID(),
@@ -2197,11 +2179,11 @@ it("decodes images and checks trace/map evidence before accepting components", a
   await expect(
     insert(review.reviewId, {
       type: "image",
-      assetId: trace.id,
+      assetId: map.id,
       alt: "Not an image",
     }),
   ).rejects.toThrow(/component type/);
-  expect(local.store.read(review.reviewId).document).toHaveLength(4);
+  expect(local.store.read(review.reviewId).document).toHaveLength(2);
   await local.store.close();
   await local.data.close();
   local = openLocalReviewStore(database);
@@ -2212,7 +2194,7 @@ it("decodes images and checks trace/map evidence before accepting components", a
   ).toBe(2);
   await local.data.validateResource(
     pins,
-    local.store.read(review.reviewId).document[2]!,
+    local.store.read(review.reviewId).document[1]!,
   );
 
   const other = local.store.registerRepository(
@@ -2312,8 +2294,14 @@ it("exposes real source and resource operations through the authenticated deskto
     const resource = {
       id: randomUUID(),
       repositoryId: pins.repositoryId,
-      kind: "trace",
-      trace: { label: "Test", events: [] },
+      kind: "image",
+      base64: (
+        await sharp({
+          create: { width: 1, height: 1, channels: 3, background: "red" },
+        })
+          .png()
+          .toBuffer()
+      ).toString("base64"),
     };
 
     expect((await post("/resources", resource)).status).toBe(200);
@@ -2329,11 +2317,8 @@ it("exposes real source and resource operations through the authenticated deskto
       },
     );
 
-    expect(response.headers.get("content-type")).toBe("application/json");
-    expect(await response.json()).toMatchObject({
-      provenance: "client_supplied",
-      events: [],
-    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("image/png");
   } finally {
     await server.close();
   }
@@ -4155,7 +4140,6 @@ it("starts Ask on a plan, which has no pins, in its repository's live checkout",
     undefined,
     undefined,
     undefined,
-    undefined,
     { threads, agents: async () => [] },
   );
 
@@ -4174,8 +4158,6 @@ it("starts Ask on a plan, which has no pins, in its repository's live checkout",
     cwd: realpathSync(repository),
     head: git("rev-parse", "HEAD"),
   });
-  // Agent traces are optional for Ask; a plan reads them from its checkout.
-  expect((await app.request(`/${reviewId}/agent-traces`)).status).toBe(200);
 });
 
 it("counts a comparison's changes with one diff however many files changed", async () => {

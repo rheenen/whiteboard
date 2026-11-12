@@ -34,11 +34,9 @@ test('Threads switches only the pane, and holds until the view changes', () => {
 	assert.equal(tabs.active, 'diff');
 });
 
-test('Trace and Map light Whiteboard', () => {
+test('Map lights Whiteboard', () => {
 	const tabs = new ReviewSidebarTabs(() => true);
 
-	tabs.follow('trace');
-	assert.equal(tabs.active, 'whiteboard');
 	tabs.follow('map');
 	assert.equal(tabs.active, 'whiteboard');
 });

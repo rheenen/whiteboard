@@ -2,7 +2,7 @@
   "name": "@dev.fast/trace-core",
   "version": "0.0.0",
   "private": true,
-  "description": "Agent trace capture, publication, and hosted-store client for the Whiteboard CLI.",
+  "description": "General utilities and the cleanup of earlier trace hooks for the Whiteboard CLI.",
   "license": "MIT",
   "files": [
     "dist"
@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build:workspace-deps": "pnpm --filter @dev.fast/json --filter @dev.fast/local-vcs --filter @dev.fast/trace-protocol build",
+    "build:workspace-deps": "pnpm --filter @dev.fast/json --filter @dev.fast/local-vcs build",
     "prebuild": "pnpm run build:workspace-deps",
     "build": "tsdown",
     "test": "vitest run --config vitest.config.ts",
@@ -25,8 +25,6 @@
   "dependencies": {
     "@dev.fast/json": "workspace:*",
     "@dev.fast/local-vcs": "workspace:*",
-    "@dev.fast/trace-protocol": "workspace:*",
-    "commander": "14.0.3",
     "zod": "catalog:"
   },
   "devDependencies": {

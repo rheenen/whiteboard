@@ -101,7 +101,7 @@ it("renders a share's document and its excerpts read-only", async () => {
     ),
   ).toBe(true);
 
-  // Neither Diff nor Trace: the share has no diff and no traces.
+  // No Diff: the share has no diff.
   expect(
     [...container.querySelectorAll("[aria-pressed]")].map((tab) =>
       tab.getAttribute("aria-label"),

@@ -1,5 +1,9 @@
 import type { AgentSelection } from "@review/agent-selection";
 
+/** The actions offered on a selection: a text box there takes focus
+ * without ending the selection. */
+export const SELECTION_ACTIONS = "[data-agent-selection-actions]";
+
 /** Authored document text participates; native code editors report their own selections. */
 export function observeAgentTextSelection(
   article: HTMLElement,
@@ -19,6 +23,10 @@ export function observeAgentTextSelection(
   let pending = false;
 
   const update = () => {
+    // Writing in the selection's own actions (a comment) moves the
+    // selection into the text box; the passage stays selected.
+    if (document.activeElement?.closest(SELECTION_ACTIONS)) return;
+
     const selection = document.getSelection();
 
     if (dragging && selection && !selection.isCollapsed) {

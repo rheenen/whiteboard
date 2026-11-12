@@ -544,8 +544,8 @@ one of these entries:
   and `scripts/product-hardening.test.mjs` fails when it drifts from
   `apps/review-desktop/package.json`. Beyond that: Review product identity, VSCodium-derived telemetry,
   experiment, crash-reporting, edit-statistics, and natural-language-search
-  opt-out defaults; stable updates from `update.dev.fast` rather than
-  Microsoft's update service; no extension gallery; no unused debugger
+  opt-out defaults; no `updateUrl`, so no update service at all (neither
+  Microsoft's nor dev.fast's); no extension gallery; no unused debugger
   built-in downloads; and removal of safely optional Microsoft service
   endpoints. The coupled default chat-agent metadata remains until its
   startup consumers can also be removed or guarded. Review also claims the
@@ -691,9 +691,6 @@ one of these entries:
   upstream's `sha256-nXjt…` with the edited script's hash; the policy is
   otherwise upstream's. Before that, the host script was blocked and every
   webview stayed blank. `scripts/product-hardening.test.mjs` checks the hash.
-- `src/vs/workbench/electron-browser/parts/dialogs/dialog.contribution.ts`:
-  append Review's PostHog install ID to the native About details and copied
-  details after the embedded server announces its stored identity.
 - `src/vs/workbench/services/layout/browser/layoutService.ts`: alias the Review
   canvas to the sessions part, and add the board sidebar part
   (`REVIEW_SIDEBAR_PART`, which replaces `REVIEW_EXPLORER_PART`) and the
@@ -802,6 +799,15 @@ one of these entries:
   `src/vs/server/node/reviewServerHandshake.test.ts` is fork-owned. The
   bundle writes an empty `out/nls.messages.json`; its `localize` calls stay
   unbuilt, so the table is never read.
+
+## No dev.fast services
+
+This fork talks to no dev.fast host. Sign-in, upload sharing, Report a bug,
+crash dump uploads, the feedback form, the usage data client and its
+settings are removed; `product.json` has no `updateUrl`, and release
+validation rejects one. Release builds pin no remote tarball: Desktop installs
+on an SSH host only from a `DEV_FAST_REVIEW_REMOTE_RELEASES` base the user
+hosts. Exporting and opening `.whiteboard` files stay.
 
 ## Serialize the fork
 

@@ -59,7 +59,6 @@ import type {
   Event as WatcherEvent,
   subscribe,
 } from "@parcel/watcher";
-import { textIncludesQuote } from "@review/evidence.js";
 import { isMissingFileError } from "@review/fs-utils.js";
 import {
   type GitHubPullRequest,
@@ -68,6 +67,7 @@ import {
 import { reviewManagedCheckoutRoot } from "@review/review-checkout-paths.js";
 import { ensureReviewPinnedCheckout } from "@review/review-head-checkout.js";
 import { StructuralComparisons } from "@review/server/structural-comparisons.js";
+import { COMMIT_ID } from "@review/sharing/repository.js";
 import { resolveSoftwareMapDiffCounts } from "@review/software-map-diff-counts.js";
 import {
   type NormalizedSoftwareModel,
@@ -101,7 +101,6 @@ import {
   ReviewStore,
   type Snapshot,
 } from "./store.js";
-import { traceSchema } from "./trace-schema.js";
 import { VersionCache } from "./version-cache.js";
 import { ReviewWorkspaces } from "./workspaces.js";
 import {
@@ -128,12 +127,6 @@ export const uploadSchema = z.discriminatedUnion("kind", [
     repositoryId: z.string(),
     kind: z.literal("image"),
     base64: z.string(),
-  }),
-  z.strictObject({
-    id: z.uuid(),
-    repositoryId: z.string(),
-    kind: z.literal("trace"),
-    trace: traceSchema,
   }),
   z.strictObject({
     id: z.uuid(),
@@ -514,6 +507,17 @@ export class LocalReviewData {
   /** A document read that needs default pins: its own, or for a plan its
    * repository's live checkout with base at head; 409 when it has neither. */
   async documentPins(snapshot: Snapshot): Promise<Pins> {
+    // Peeks of a board opened read-only read the file's own lines.
+    if (
+      snapshot.pins &&
+      this.readOnlyCommits(
+        snapshot.pins.repositoryId,
+        snapshot.pins.base,
+        snapshot.pins.head,
+      )
+    )
+      return snapshot.pins;
+
     const pins =
       (await this.sourcePins(snapshot)) ??
       (snapshot.target?.kind === "project"
@@ -1024,7 +1028,12 @@ export class LocalReviewData {
 
     if (!snapshot.pins) return undefined;
 
-    if (!existsSync(this.store.repositoryPath(snapshot.pins.repositoryId)))
+    // A board opened read-only has no checkout: commits, diffs and maps
+    // are unavailable, as for a removed one.
+    if (
+      !existsSync(this.store.repositoryPath(snapshot.pins.repositoryId)) ||
+      this.store.excerpts.has(snapshot.pins.repositoryId)
+    )
       throw unavailableCheckout();
 
     return snapshot.pins;
@@ -1157,6 +1166,21 @@ export class LocalReviewData {
       throw new ReviewInputError("A project target has no commits.");
 
     const vcs = await this.vcs(target.repositoryId);
+
+    if (
+      !vcs &&
+      target.kind === "commits" &&
+      target.base !== undefined &&
+      this.readOnlyCommits(target.repositoryId, target.base, target.head)
+    )
+      return {
+        target,
+        pins: {
+          repositoryId: target.repositoryId,
+          base: target.base,
+          head: target.head,
+        },
+      };
 
     if (!vcs) throw unavailableCheckout();
 
@@ -1615,7 +1639,24 @@ export class LocalReviewData {
       ? resolved.commit
       : undefined;
   }
+  /** A file opened read-only, without a checkout: its commits are the
+   * file's, as it wrote them, and its excerpts stand in for Git. */
+  private readOnlyCommits(repositoryId: string, base: string, head: string) {
+    return (
+      COMMIT_ID.test(base) &&
+      COMMIT_ID.test(head) &&
+      this.store.excerpts.has(repositoryId)
+    );
+  }
+
   async validatePins(pins: Pins) {
+    if (
+      !pins.worktreeRevision &&
+      this.readOnlyCommits(pins.repositoryId, pins.base, pins.head) &&
+      !(await this.vcs(pins.repositoryId))
+    )
+      return;
+
     if (pins.worktreeRevision) {
       if (!(await this.vcs(pins.repositoryId))) throw unavailableCheckout();
 
@@ -1660,18 +1701,26 @@ export class LocalReviewData {
               })
             : null;
 
-    if (text === null)
+    // A board opened read-only from a file: its excerpts stand in for Git.
+    const read =
+      text ??
+      (vcs
+        ? undefined
+        : this.store.excerpts.file(pins.repositoryId, commit, file)) ??
+      null;
+
+    if (read === null)
       throw new ReviewInputError(
         "File is unavailable at the pinned commit.",
         404,
       );
 
-    if (!allowBinary && text.includes("\0"))
+    if (!allowBinary && read.includes("\0"))
       throw new ReviewInputError(
         "Binary files cannot be used as code references.",
       );
 
-    return { file, side, commit, text };
+    return { file, side, commit, text: read };
   }
 
   async tree(
@@ -2144,16 +2193,6 @@ export class LocalReviewData {
         mimeType = "image/png";
         break;
 
-      case "trace":
-        if (
-          new Set(input.trace.events.map((event) => event.id)).size !==
-          input.trace.events.length
-        )
-          throw new ReviewInputError("Trace event IDs must be unique.");
-        data = Buffer.from(
-          JSON.stringify({ ...input.trace, provenance: "client_supplied" }),
-        );
-        break;
       case "map": {
         if (input.pins.repositoryId !== input.repositoryId)
           throw new ReviewInputError("Map belongs to a different repository.");
@@ -2228,19 +2267,6 @@ export class LocalReviewData {
       );
 
     if (!pins) this.store.repositoryPath(resource.repositoryId);
-
-    if (block.type === "trace_quote") {
-      const trace = traceSchema.parse(
-        JSON.parse(Buffer.from(resource.data).toString()),
-      );
-
-      const event = trace.events.find((event) => event.id === block.eventId);
-
-      if (!event || !textIncludesQuote(event.text, block.text))
-        throw new ReviewInputError(
-          "Quote does not match the retained trace event.",
-        );
-    }
 
     if (block.type === "software_map") {
       // SAFETY: map resources are normalized and validated by upload before storage.

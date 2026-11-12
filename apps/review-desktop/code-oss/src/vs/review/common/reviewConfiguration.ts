@@ -20,7 +20,7 @@
 import { localize } from '../../nls.js';
 import { Registry } from '../../platform/registry/common/platform.js';
 import { ConfigurationScope, Extensions, type IConfigurationRegistry } from '../../platform/configuration/common/configurationRegistry.js';
-import { REVIEW_DIAGRAM_FULLSCREEN_ON_CLICK_SETTING, REVIEW_DIFF_COLOR_THEME_SETTING, REVIEW_INLINE_LINE_NUMBERS_SETTING, DIFF_EDITOR_FONT_SIZE_SETTING, REVIEW_DOCUMENT_FONT_SIZE_BASE, REVIEW_DOCUMENT_FONT_SIZE_SETTING, REVIEW_DOCUMENT_WIDTH_CHOICES, REVIEW_DOCUMENT_WIDTH_SETTING, REVIEW_KEYMAPS, REVIEW_KEYMAP_SETTING, REVIEW_OPEN_FILES_IN_APPLICATION_SETTING, REVIEW_OPEN_FILES_IN_CHOICES, REVIEW_OPEN_FILES_IN_SETTING, REVIEW_PEEK_SIDE_BY_SIDE_SETTING, REVIEW_READING_FONTS, REVIEW_READING_FONT_FAMILY_SETTING, REVIEW_READING_FONT_SETTING, REVIEW_READY_NOTIFICATION_CHOICES, REVIEW_READY_NOTIFICATION_SETTING, REVIEW_REMOTE_HOSTS_SETTING, REVIEW_REMOTE_INSTALL_MODES, REVIEW_REMOTE_INSTALL_SETTING, REVIEW_SOFTWARE_MAP_SETTING, REVIEW_TELEMETRY_SETTING, curatedExtensionConfigurationDefaults, reviewConfigurationDefaults } from './reviewConfigurationDefaults.js';
+import { REVIEW_DIAGRAM_FULLSCREEN_ON_CLICK_SETTING, REVIEW_DIFF_COLOR_THEME_SETTING, REVIEW_INLINE_LINE_NUMBERS_SETTING, DIFF_EDITOR_FONT_SIZE_SETTING, REVIEW_DOCUMENT_FONT_SIZE_BASE, REVIEW_DOCUMENT_FONT_SIZE_SETTING, REVIEW_DOCUMENT_WIDTH_CHOICES, REVIEW_DOCUMENT_WIDTH_SETTING, REVIEW_KEYMAPS, REVIEW_KEYMAP_SETTING, REVIEW_OPEN_FILES_IN_APPLICATION_SETTING, REVIEW_OPEN_FILES_IN_CHOICES, REVIEW_OPEN_FILES_IN_SETTING, REVIEW_PEEK_SIDE_BY_SIDE_SETTING, REVIEW_READING_FONTS, REVIEW_READING_FONT_FAMILY_SETTING, REVIEW_READING_FONT_SETTING, REVIEW_READY_NOTIFICATION_CHOICES, REVIEW_READY_NOTIFICATION_SETTING, REVIEW_REMOTE_HOSTS_SETTING, REVIEW_REMOTE_INSTALL_MODES, REVIEW_REMOTE_INSTALL_SETTING, REVIEW_SOFTWARE_MAP_SETTING, curatedExtensionConfigurationDefaults, reviewConfigurationDefaults } from './reviewConfigurationDefaults.js';
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(Extensions.Configuration);
 
@@ -93,12 +93,12 @@ configurationRegistry.registerConfiguration({
 				localize('review.readingFont.sans', "Inter, the interface face."),
 			],
 			default: 'serif',
-			description: localize('review.readingFont', "The face for whiteboard prose, Ask answers and trace notes."),
+			description: localize('review.readingFont', "The face for whiteboard prose and Ask answers."),
 		},
 		[REVIEW_READING_FONT_FAMILY_SETTING]: {
 			type: 'string',
 			default: '',
-			description: localize('review.readingFontFamily', "A font family for whiteboard prose, Ask answers and trace notes. When set, it replaces the reading typeface."),
+			description: localize('review.readingFontFamily', "A font family for whiteboard prose and Ask answers. When set, it replaces the reading typeface."),
 		},
 		// Diffs merge `diffEditor.*` over `editor.*`.
 		[DIFF_EDITOR_FONT_SIZE_SETTING]: {
@@ -128,11 +128,6 @@ configurationRegistry.registerConfiguration({
 			],
 			default: 'off',
 			description: localize('review.notifications.reviewReady', "How Whiteboard tells you an agent finished a review."),
-		},
-		[REVIEW_TELEMETRY_SETTING]: {
-			type: 'boolean',
-			default: true,
-			description: localize('review.telemetry.enabled', "Send anonymous Whiteboard usage data."),
 		},
 		[REVIEW_SOFTWARE_MAP_SETTING]: {
 			type: 'boolean',

@@ -24,7 +24,6 @@ import {
 import { useReviewSession } from "./host/review-session";
 import { shellStyles } from "./shell-styles";
 import { tokens } from "./tokens.stylex";
-import { captureClientError, captureUiEvent } from "./ui-telemetry";
 
 const LAYOUT_OPTIONS = labeledOptions<ReviewDiffLayout>({
   unified: "Unified",
@@ -148,13 +147,9 @@ function useDiffLayout(scope: ReviewDiffLayoutScope) {
 
   const choose = (next: ReviewDiffLayout) => {
     if (next === shownLayout) return;
-    captureUiEvent(session, "diff_layout_changed", { layout: next, scope });
     setPending(next);
     bridge.setDiffLayout(scope, next).catch((error: Error) => {
       setPending(null);
-      captureClientError(session, "settings", error, {
-        component: "diff_layout",
-      });
     });
   };
 
@@ -187,9 +182,6 @@ function useInlineLineNumbers() {
     mutationFn: (next: boolean) => bridge.setInlineLineNumbers(next),
     onError: (error) => {
       setPending(null);
-      captureClientError(session, "settings", error, {
-        component: "inline_line_numbers",
-      });
     },
   });
 

@@ -10,6 +10,7 @@ import {
   ExternalLinkIcon,
   MapPinIcon,
   MinusIcon,
+  PencilIcon,
   PopOutIcon,
 } from "@canvas/ui/icons";
 import {
@@ -18,7 +19,6 @@ import {
 } from "@canvas/ui/overlay-scrollbar";
 import { textStyles } from "@canvas/ui/text";
 import { useTooltip } from "@canvas/ui/tooltip";
-import { extractTraceEventText } from "@dev.fast/trace-protocol";
 import * as stylex from "@stylexjs/stylex";
 import type {
   CSSProperties,
@@ -40,6 +40,7 @@ import {
 import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 
+import { useAgentSelection } from "./agent-selection";
 import { AskCloseWarning } from "./ask-close";
 import { AskDeleteThreadButton } from "./ask-delete";
 import {
@@ -63,6 +64,7 @@ import {
 import { useMarkThreadViewed } from "./ask-viewed";
 import { AskSlot, AskWindow } from "./ask-window";
 import { AuthoredCodeSurface } from "./authored-code-surface";
+import { CommentPin, partSelection, usePartComments } from "./board-comments";
 import { SourceCodePeek } from "./CodePeek";
 import { documentStyles } from "./document-styles";
 import { drawStyles } from "./draw-styles";
@@ -102,10 +104,6 @@ import { useBottomSheetResize } from "./side-panel-resizer";
 import { panelStyles, tourStyles } from "./side-panel-styles";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { TraceDocument } from "./trace-document";
-import { traceStyles } from "./trace-styles";
-import { captureUiEvent } from "./ui-telemetry";
-import { useAgentTrace } from "./use-agent-trace";
 
 const TOUR_ACTIVE_TOP_SLACK_PX = 18;
 
@@ -401,7 +399,7 @@ interface ProsePeekAnchorProps {
 }
 
 /**
- * Shared prose side-peek anchor primitive for AnchorLink and TraceQuote.
+ * Shared prose side-peek anchor primitive for AnchorLink.
  * Renders an inline anchor with open-state styling, telemetry, and visibility retention.
  */
 export function ProsePeekAnchor({
@@ -434,10 +432,6 @@ export function ProsePeekAnchor({
           onAlreadyOpen();
 
           return;
-        }
-
-        if (session) {
-          captureUiEvent(session, "peek_opened", { via: "prose_link" });
         }
 
         onOpen(event.currentTarget.textContent?.trim() ?? "");
@@ -735,164 +729,6 @@ function OpenAsk({ askKey }: { askKey: number }) {
   );
 }
 
-function TraceQuotePeekPanel({
-  sessionId,
-  trace,
-  event,
-  quote,
-  onClose,
-}: {
-  sessionId: string;
-  trace?: string;
-  event?: number;
-  quote: string;
-  onClose: () => void;
-}) {
-  const { openTraceSession } = useReviewActions();
-  const data = useAgentTrace(sessionId, trace);
-
-  const traceEvents = data.status === "loaded" ? data.trace.events : undefined;
-
-  const targetEventIndex = useMemo(() => {
-    if (!traceEvents) return -1;
-
-    if (event !== undefined && event >= 0 && event < traceEvents.length) {
-      const e = traceEvents[event];
-      const text = extractTraceEventText(e);
-
-      if (findWhitespaceNormalizedSpan(text, quote)) {
-        return event;
-      }
-    }
-
-    for (let i = 0; i < traceEvents.length; i++) {
-      const text = extractTraceEventText(traceEvents[i]);
-
-      if (findWhitespaceNormalizedSpan(text, quote)) {
-        return i;
-      }
-    }
-
-    return -1;
-  }, [traceEvents, event, quote]);
-
-  const picks = useMemo(() => {
-    if (!traceEvents || targetEventIndex === -1) return undefined;
-    let turnStart = 0;
-
-    for (let index = targetEventIndex; index >= 0; index -= 1) {
-      if (traceEvents[index].kind === "user") {
-        turnStart = index;
-        break;
-      }
-    }
-
-    let nextUserIndex = -1;
-
-    for (
-      let index = targetEventIndex + 1;
-      index < traceEvents.length;
-      index += 1
-    ) {
-      if (traceEvents[index].kind === "user") {
-        nextUserIndex = index;
-        break;
-      }
-    }
-
-    const turnEnd =
-      nextUserIndex === -1 ? traceEvents.length - 1 : nextUserIndex - 1;
-
-    const events: [number, number] = [turnStart, turnEnd];
-
-    return [{ events }];
-  }, [traceEvents, targetEventIndex]);
-
-  if (data.status === "loading" || data.status === "idle") {
-    return (
-      <ReviewPanelFrame
-        label="Agent trace"
-        title={
-          trace ? `${sessionId.slice(0, 8)} · ${trace}` : sessionId.slice(0, 8)
-        }
-        onClose={onClose}
-        closeLabel="Close side peek"
-      >
-        <div {...stylex.props(panelStyles.peekBody)}>
-          <p {...stylex.props(traceStyles.note)}>Loading trace…</p>
-        </div>
-      </ReviewPanelFrame>
-    );
-  }
-
-  if (data.status === "error") {
-    return (
-      <ReviewPanelFrame
-        label="Agent trace"
-        title={sessionId.slice(0, 8)}
-        onClose={onClose}
-        closeLabel="Close side peek"
-      >
-        <div {...stylex.props(panelStyles.peekBody)}>
-          <p {...stylex.props(traceStyles.note, textStyles.error)}>
-            {data.error}
-          </p>
-        </div>
-      </ReviewPanelFrame>
-    );
-  }
-
-  const loadedTrace = data.trace;
-  const events = loadedTrace.events;
-
-  const headerAccessory = (
-    <Button
-      xstyle={traceStyles.peekOpenFull}
-      onClick={() => {
-        openTraceSession?.({
-          sessionId,
-          trace,
-          eventIndex: targetEventIndex >= 0 ? targetEventIndex : undefined,
-        });
-        onClose();
-      }}
-    >
-      Full Trace
-      <ExternalLinkIcon xstyle={iconStyles.inline} />
-    </Button>
-  );
-
-  return (
-    <ReviewPanelFrame
-      label="Agent trace"
-      title={
-        loadedTrace.title ??
-        (trace ? `${sessionId.slice(0, 8)} · ${trace}` : sessionId.slice(0, 8))
-      }
-      titleAccessory={headerAccessory}
-      onClose={onClose}
-      closeLabel="Close side peek"
-    >
-      <div {...stylex.props(panelStyles.peekBody)}>
-        {targetEventIndex === -1 ? (
-          <p {...stylex.props(traceStyles.note)}>
-            Quote not found in this session transcript.
-          </p>
-        ) : (
-          <TraceDocument
-            key={`${sessionId}-${trace ?? ""}-${targetEventIndex}-${quote}`}
-            events={events}
-            targetEventIndex={targetEventIndex}
-            highlightQuote={quote}
-            picks={picks}
-            scoped
-          />
-        )}
-      </div>
-    </ReviewPanelFrame>
-  );
-}
-
 function ReviewPeekPanel({
   anchor,
   content,
@@ -902,18 +738,6 @@ function ReviewPeekPanel({
   content: ReviewPeekContent;
   onClose: () => void;
 }) {
-  if (content.kind === "trace-quote") {
-    return (
-      <TraceQuotePeekPanel
-        sessionId={content.sessionId}
-        trace={content.trace}
-        event={content.event}
-        quote={content.quote}
-        onClose={onClose}
-      />
-    );
-  }
-
   if (!anchor) return null;
 
   return (
@@ -927,10 +751,7 @@ function CodeReviewPeekPanel({
   onClose,
 }: {
   anchor: PeekAnchor;
-  content: Extract<
-    ReviewPeekContent,
-    { kind: "source" | "inline-code" | "explanation" }
-  >;
+  content: ReviewPeekContent;
   onClose: () => void;
 }) {
   const { softwareMapEnabled, openSoftwareMapElement } = useReviewActions();
@@ -959,11 +780,7 @@ function CodeReviewPeekPanel({
         ) : null}
 
         <div {...stylex.props(panelStyles.peekContent)}>
-          <ReviewPeekContentView
-            anchor={anchor}
-            content={content}
-            reportOutcome
-          />
+          <ReviewPeekContentView anchor={anchor} content={content} />
         </div>
       </div>
     </ReviewPanelFrame>
@@ -996,58 +813,13 @@ export function GuidedTourPanel({
     (stop) => stop.anchor.id === activeAnchor,
   );
 
-  const activeIndexRef = useRef(activeIndex);
-  activeIndexRef.current = activeIndex;
-  const previousActiveIndexRef = useRef(activeIndex);
-  const completedTourIdRef = useRef<string | null>(null);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const [tailHeight, setTailHeight] = useState(0);
   const [hasScrolled, setHasScrolled] = useState(false);
 
   useEffect(() => {
-    completedTourIdRef.current = null;
-    previousActiveIndexRef.current = activeIndexRef.current;
     setHasScrolled(false);
   }, [tour.id]);
-
-  useEffect(() => {
-    const previousIndex = previousActiveIndexRef.current;
-    previousActiveIndexRef.current = activeIndex;
-
-    if (activeIndex <= previousIndex || activeIndex < 0) return;
-    captureUiEvent(session, "tour_step_advanced", {
-      step: activeIndex + 1,
-      steps: tour.stops.length,
-    });
-  }, [activeIndex, session, tour.stops.length]);
-
-  const captureAbandoned = useEffectEvent((step: number, steps: number) => {
-    captureUiEvent(session, "tour_abandoned", { step, steps });
-  });
-
-  useEffect(() => {
-    let armed = false;
-
-    const timer = window.setTimeout(() => {
-      armed = true;
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-      const index = activeIndexRef.current;
-
-      if (
-        !armed ||
-        tour.stops.length === 0 ||
-        index >= tour.stops.length - 1 ||
-        completedTourIdRef.current === tour.id
-      ) {
-        return;
-      }
-
-      captureAbandoned(Math.max(0, index) + 1, tour.stops.length);
-    };
-  }, [session.appSessionId, tour.id, tour.stops.length]);
 
   // Scroll-syncing activates a stop when its top crosses the active line, so
   // the last stop must be able to reach it: the tail spacer grants exactly
@@ -1093,19 +865,6 @@ export function GuidedTourPanel({
 
     return () => observer.disconnect();
   }, [tour]);
-
-  useEffect(() => {
-    if (
-      tour.stops.length === 0 ||
-      activeIndex < tour.stops.length - 1 ||
-      completedTourIdRef.current === tour.id
-    ) {
-      return;
-    }
-
-    completedTourIdRef.current = tour.id;
-    captureUiEvent(session, "tour_completed", { steps: tour.stops.length });
-  }, [activeIndex, session, tour]);
 
   useEffect(() => {
     if (handledRevealRequestRef.current === revealRequest) return;
@@ -1303,6 +1062,7 @@ export function GuidedTourPanel({
                   </div>
                 </div>
                 <GuidedTourStopMain
+                  tourId={tour.id}
                   stop={stop}
                   index={index}
                   total={tour.stops.length}
@@ -1340,6 +1100,7 @@ export function GuidedTourPanel({
 }
 
 function GuidedTourStopMain({
+  tourId,
   stop,
   index,
   total,
@@ -1347,6 +1108,8 @@ function GuidedTourStopMain({
   onNativeFocus,
   onClose,
 }: {
+  /** The block whose tour this is: a comment on the step names it. */
+  tourId: string;
   stop: GuidedTourStop;
   index: number;
   total: number;
@@ -1372,6 +1135,7 @@ function GuidedTourStopMain({
             >
               {stop.label}
             </h3>
+            <StepComments tourId={tourId} stop={stop} />
           </div>
           {stop.detail && (
             <p {...stylex.props(tourStyles.detail)}>{stop.detail}</p>
@@ -1405,18 +1169,55 @@ function GuidedTourStopMain({
   );
 }
 
+/** A step's comments: its comment icon, and a button that comments on the
+ * step, on the code behind it when it has code. */
+function StepComments({
+  tourId,
+  stop,
+}: {
+  tourId: string;
+  stop: GuidedTourStop;
+}): ReactElement | null {
+  const selectForAgent = useAgentSelection();
+  const panels = useOptionalReviewPanelStore();
+  const matches = useCallback((id: string) => id === stop.anchor.id, [stop]);
+  const comments = usePartComments(tourId, matches);
+
+  return (
+    <>
+      <CommentPin comments={comments} label={stop.label} />
+      {panels ? (
+        <IconButton
+          size="small"
+          aria-label={`Add comment on ${stop.label}`}
+          onClick={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+
+            selectForAgent({
+              ...partSelection(tourId, stop),
+              compose: true,
+              anchorElement: event.currentTarget,
+              anchor: { x: rect.left, y: rect.top },
+            });
+          }}
+        >
+          <PencilIcon xstyle={iconStyles.inert} />
+        </IconButton>
+      ) : null}
+    </>
+  );
+}
+
 function ReviewPeekContentView({
   anchor,
   content,
   active,
   onNativeFocus,
-  reportOutcome = false,
 }: {
   anchor: PeekAnchor;
   content: ReviewPeekContent;
   active?: boolean;
   onNativeFocus?: () => void;
-  reportOutcome?: boolean;
 }) {
   if (content.kind === "explanation")
     return content.text ? (
@@ -1429,7 +1230,6 @@ function ReviewPeekContentView({
         sources={[content.source, ...(content.more ?? [])]}
         active={active}
         onNativeFocus={onNativeFocus}
-        reportOutcome={reportOutcome}
       />
     );
   }

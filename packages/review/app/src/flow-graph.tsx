@@ -36,6 +36,7 @@ import {
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
+import { DiagramPartPin } from "./board-comments";
 import { useReviewDebugSettings } from "./debug-settings";
 import { diagramStyles } from "./diagram-styles";
 import { useMotionPhase } from "./draw-queue-provider";
@@ -580,6 +581,8 @@ function FlowNode({ data, height = SIZE.height }: NodeProps<FlowNodeType>) {
         }
       }}
     >
+      {/* Its tour steps are "<block>:<key>" and "<block>:<key>:<n>". */}
+      <DiagramPartPin partId={node.key} label={node.label} scoped steps />
       <Handle
         type="target"
         position={Position.Top}

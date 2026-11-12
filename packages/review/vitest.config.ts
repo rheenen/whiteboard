@@ -16,10 +16,6 @@ export default defineConfig({
         os.tmpdir(),
         `progressive-review-config-tests-${process.pid}`,
       ),
-      // GitHub Actions exports the repository slug, which the trace code
-      // honors over a checkout's remote; scratch repositories in tests must
-      // resolve to their own remotes.
-      GITHUB_REPOSITORY: "",
     },
     // The repository gate runs package lanes concurrently on a two-core host.
     // Keep Review on one worker so it does not starve the other lanes.

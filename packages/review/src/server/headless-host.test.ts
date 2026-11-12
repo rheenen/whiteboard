@@ -48,7 +48,6 @@ import {
   reviewManagedCheckoutRoot,
 } from "@review/review-checkout-paths.js";
 import { writeAnimationsEnabled } from "@review/review-preferences.js";
-import { ReviewTelemetry } from "@review/review-telemetry.js";
 import {
   type ReviewServerDiscovery,
   headlessServerLockPath,
@@ -70,7 +69,6 @@ const stops: (() => Promise<void>)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-headless-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
   vi.stubEnv("SHELL", "");
 });
 
@@ -249,21 +247,6 @@ it("shares review identity, resources, sessions and live changes with Desktop in
         break;
     }
 
-    const traceId = randomUUID();
-    await server.client.post("/resources", {
-      id: traceId,
-      repositoryId: registered.id,
-      kind: "trace",
-      trace: {
-        label: "Evidence",
-        events: [{ id: "answer", role: "assistant", text: "Shared bytes" }],
-      },
-    });
-    expect(
-      await desktop.read(`/${created.reviewId}/resources/${traceId}`),
-    ).toMatchObject({
-      label: "Evidence",
-    });
     await server.client.post("/commands", {
       operation: {
         type: "edit",
@@ -271,12 +254,7 @@ it("shares review identity, resources, sessions and live changes with Desktop in
         activityId,
         edit: {
           type: "insert",
-          content: {
-            type: "trace_quote",
-            traceId,
-            eventId: "answer",
-            text: "Shared bytes",
-          },
+          content: { type: "markdown", markdown: "Shared bytes" },
         },
       },
     });
@@ -416,16 +394,6 @@ it("authors through CLI and MCP without Desktop and retains source, unfinished s
       },
     },
   });
-  const traceId = randomUUID();
-  await client.post("/resources", {
-    id: traceId,
-    repositoryId: registered.id,
-    kind: "trace",
-    trace: {
-      label: "CI author",
-      events: [{ id: "one", role: "assistant", text: "Checked the source" }],
-    },
-  });
   // Existing maps can be uploaded even with generation disabled.
   const mapId = randomUUID();
   await client.post("/resources", {
@@ -491,10 +459,6 @@ it("authors through CLI and MCP without Desktop and retains source, unfinished s
   );
 
   expect(Buffer.from(await retained.arrayBuffer())).toEqual(image);
-  expect(
-    (await restarted.client.response(`/${reviewId}/resources/${traceId}`))
-      .status,
-  ).toBe(200);
   expect(
     (await restarted.client.response(`/${reviewId}/resources/${mapId}`)).status,
   ).toBe(200);
@@ -997,7 +961,6 @@ it.each(["attached", "not yet attached"])(
       packageRoot: root,
       toolingRoot: root,
       port: 0,
-      telemetry: ReviewTelemetry.fromEnv(process.env),
     });
 
     stops.push(async () => {

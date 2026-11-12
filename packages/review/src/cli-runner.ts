@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { realpath } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
@@ -14,31 +15,10 @@ import {
   type ReviewRemoteAgentId,
 } from "@dev.fast/review-protocol";
 import {
-  StoreApiError,
-  readStoreAuth,
-  withStoreAuthorization,
-} from "@dev.fast/trace-core";
-import {
   type CliInputStream,
-  DEFAULT_STORE_ORIGIN,
   emitJsonEvent,
   humanStream,
   jsonRequestedInArgv,
-  registerTraceCommands,
-  resolveTraceCommand,
-  runStoreLogin,
-  runStoreLogout,
-  runStoreWhoami,
-  runTraceAllow,
-  runTraceDeny,
-  runTraceInstallMachine,
-  runTraceOnboard,
-  runTraceSessions,
-  runTraceStoreDelete,
-  runTraceStoreInfo,
-  traceHomeDir,
-  traceMachineEnabled,
-  traceScope,
 } from "@dev.fast/trace-core";
 import { Argument, Command, CommanderError, Option } from "commander";
 
@@ -50,11 +30,7 @@ import {
 } from "./cli-install";
 import { cliRuntimeInfo, describeCliRuntime } from "./cli-runtime-info";
 import { connectPrompts } from "./connect-prompts";
-import {
-  ReviewInstanceUnavailableError,
-  desktopUsesHome,
-  selectReviewInstance,
-} from "./desktop-discovery";
+import { desktopUsesHome, selectReviewInstance } from "./desktop-discovery";
 import {
   ALL_INSTALL_TARGETS,
   type InstallTarget,
@@ -65,14 +41,9 @@ import {
   findReviewPackageRoot,
   readReviewPackageVersion,
 } from "./package-paths";
+import { isRetiredTraceHook } from "./retired-trace-hooks";
 import { reviewAgentCliHelp } from "./review-api/agent-cli";
-import { ReviewApiError } from "./review-api/client";
-import {
-  type ReviewAppEvent,
-  ReviewAppStateError,
-  ReviewAppUsageError,
-  runReviewAppPick,
-} from "./review-app";
+import { type ReviewAppEvent, runReviewAppPick } from "./review-app";
 import {
   type ReviewAppLaunchEvent,
   runReviewAppLaunch,
@@ -85,14 +56,6 @@ import {
 } from "./review-instances";
 import { emitReviewEvent, serializeReviewError } from "./review-logger";
 import {
-  type ReviewCliCommand,
-  type ReviewCliCommandPath,
-  type ReviewCommandTelemetry,
-  ReviewTelemetry,
-  type ReviewTelemetryErrorCategory,
-  type ReviewTelemetryErrorName,
-} from "./review-telemetry";
-import {
   DESKTOP_TAKEOVER_SIGNAL,
   type ReviewServerDiscovery,
   readReviewServerDiscovery,
@@ -101,23 +64,6 @@ import {
   reviewServerStateDir,
   serverNotReady,
 } from "./server-discovery";
-import { aliasInstallationToAccount } from "./server/account-alias";
-import { setTraceAttribute, span } from "./startup-trace";
-import type { ReviewTelemetrySurface } from "./telemetry-config";
-import {
-  runTraceBlame,
-  runTraceDisable,
-  runTraceEnable,
-  runTraceGitHook,
-  runTraceHook,
-  runTraceList,
-  runTracePull,
-  runTraceRepair,
-  runTraceShow,
-  runTraceStatus,
-  runTraceSync,
-} from "./trace-cli";
-import { runTraceConfigMigrate, runTraceStorageUse } from "./trace-storage-cli";
 
 class ReviewCliUsageError extends Error {
   readonly name = "ReviewCliUsageError";
@@ -127,29 +73,6 @@ interface ReviewCliRuntime {
   runReviewAppLaunch: typeof runReviewAppLaunch;
   runReviewAppPick: typeof runReviewAppPick;
   runReviewInfo: typeof runReviewInfo;
-  runTraceStatus: typeof runTraceStatus;
-  runTraceEnable: typeof runTraceEnable;
-  runTraceDisable: typeof runTraceDisable;
-  runTraceRepair: typeof runTraceRepair;
-  runTraceList: typeof runTraceList;
-  runTraceShow: typeof runTraceShow;
-  runTracePull: typeof runTracePull;
-  runTraceBlame: typeof runTraceBlame;
-  runTraceHook: typeof runTraceHook;
-  runTraceGitHook: typeof runTraceGitHook;
-  runTraceSync: typeof runTraceSync;
-  runTraceStorageUse: typeof runTraceStorageUse;
-  runTraceConfigMigrate: typeof runTraceConfigMigrate;
-  runTraceInstallMachine: typeof runTraceInstallMachine;
-  runTraceOnboard: typeof runTraceOnboard;
-  runTraceStoreDelete: typeof runTraceStoreDelete;
-  runTraceStoreInfo: typeof runTraceStoreInfo;
-  runTraceSessions: typeof runTraceSessions;
-  runTraceAllow: typeof runTraceAllow;
-  runTraceDeny: typeof runTraceDeny;
-  runStoreLogin: typeof runStoreLogin;
-  runStoreLogout: typeof runStoreLogout;
-  runStoreWhoami: typeof runStoreWhoami;
 }
 
 export interface ReviewCliInput {
@@ -161,7 +84,6 @@ export interface ReviewCliInput {
   stdin?: CliInputStream;
   stdout: Writable;
   stderr: Writable;
-  telemetry?: ReviewCommandTelemetry;
   runtime?: Partial<ReviewCliRuntime>;
 }
 
@@ -170,7 +92,7 @@ interface ReviewInfoOptions {
   session?: string;
 }
 
-type OutputSurface = ReviewCliCommand | "plain";
+type OutputSurface = "review" | "map" | "status" | "plain";
 
 interface CliRunState {
   exitCode: number;
@@ -183,20 +105,14 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
   const env = input.env ?? process.env;
   const cwd = input.cwd ?? env.INIT_CWD ?? process.cwd();
 
-  // The command every installed hook re-enters. The Review CLI resolves it
-  // the same way the hooks did on their own, so `review` behaves as before.
-  const traceCommand = resolveTraceCommand({
-    env,
-    homeDir: traceHomeDir(env),
-  });
+  if (isRetiredTraceHook(input.argv)) return 0;
 
-  const scope = traceScope({ env, homeDir: traceHomeDir(env) });
+  const homeDir = env.HOME?.trim() || os.homedir();
 
   const cliVersion =
     input.cliVersion ?? readReviewPackageVersion(import.meta.url);
 
   const runtime = reviewCliRuntime(input.runtime);
-  const telemetry = input.telemetry ?? ReviewTelemetry.fromEnv(env);
 
   const state: CliRunState = {
     exitCode: 0,
@@ -204,22 +120,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     parserErrorOutput: "",
     json: jsonRequestedInArgv(input.argv),
   };
-
-  let telemetryProperties: Record<
-    string,
-    boolean | number | string | null | undefined
-  > = {};
-
-  let activeTelemetry:
-    | {
-        command: ReviewCliCommandPath;
-        commandRunId: string;
-        startedAt: number;
-        finished: boolean;
-      }
-    | undefined;
-
-  let activeCause: unknown;
 
   const configureOutput = <T extends Command>(
     command: T,
@@ -389,7 +289,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         softwareMapEnabled: options.softwareMaps,
         startedBy: options.startedBy,
         signal: controller.signal,
-        telemetry,
         onReady: ({ url, serverPid }) => {
           input.stdout.write(
             options.json
@@ -1018,7 +917,7 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
 
       if (options.detect) {
         const agents = (
-          await detectConnectAgents({ homeDir: scope.homeDir, env })
+          await detectConnectAgents({ homeDir: homeDir, env })
         ).flatMap(({ target, name, found, connected }) =>
           found && REVIEW_REMOTE_AGENT_IDS.some((id) => id === target)
             ? [{ id: target, name, connected }]
@@ -1053,12 +952,12 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
             `connect --yes takes one or more of ${REVIEW_REMOTE_AGENT_IDS.join(", ")}.`,
           );
 
-        const hasShim = await shimLaunchable(scope.homeDir, env);
+        const hasShim = await shimLaunchable(homeDir, env);
         const results = [];
 
         for (const target of agents) {
           const result = await connectAgent(target, {
-            homeDir: scope.homeDir,
+            homeDir: homeDir,
             env,
             hasShim,
           });
@@ -1095,14 +994,9 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
 
       const selected = parseTargets(targets);
 
-      const { homeDir, devHome } = scope;
-
       const prompts = connectPrompts({
         legacyPaths: await scanLegacySkills(homeDir),
         hasShim: await shimLaunchable(homeDir, env),
-        traceEnabled: await traceMachineEnabled({ homeDir, env }),
-        fffBinaryPath: path.join(homeDir, ".local", "bin", "fff-mcp"),
-        fffCorpusRoot: path.join(devHome, "trace-search"),
       });
 
       if (options.json) {
@@ -1144,53 +1038,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     },
   );
 
-  const share = configureJsonOutput(
-    program
-      .command("share")
-      .description(
-        "Upload an immutable review snapshot and return its share link",
-      ),
-    "plain",
-  )
-    .option("--review <id>", "review ID")
-    .option("--version <number>", "Saved version to share")
-    .option("--preview", "Open the share link in Whiteboard Preview by default")
-    .option(
-      "--request-id <uuid>",
-      "Reuse this ID when retrying the same immutable upload",
-    )
-    .action(
-      async (options: {
-        session?: string;
-        version?: string;
-        requestId?: string;
-        preview?: boolean;
-        json?: boolean;
-      }) => {
-        const { runShareCli } = await import("./sharing/cli.js");
-        state.exitCode = await runShareCli({
-          ...input,
-          ...options,
-          env: authoringEnv(),
-        });
-      },
-    );
-
-  configureJsonOutput(
-    share
-      .command("revoke <share-id>")
-      .description("Revoke future downloads of a share"),
-    "plain",
-  ).action(async (shareId: string, options: { json?: boolean }) => {
-    const { runShareCli } = await import("./sharing/cli.js");
-    state.exitCode = await runShareCli({
-      ...input,
-      ...options,
-      revoke: shareId,
-      env: authoringEnv(),
-    });
-  });
-
   configureJsonOutput(
     program
       .command("export")
@@ -1220,180 +1067,38 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       },
     );
 
-  // Hosted trace store login. Logging in authenticates a user; it selects
-  // no storage by itself.
   configureJsonOutput(
-    program.command("login").description("Log in to Whiteboard with GitHub"),
+    program
+      .command("comments")
+      .description(
+        "Print a review's comments from its saved state; works without a running server",
+      ),
     "plain",
   )
-    .option(
-      "--origin <url>",
-      `Whiteboard service origin (default: $DEV_REVIEW_SERVICE_ORIGIN or ${DEFAULT_STORE_ORIGIN})`,
-    )
-    .option("--traces", "Also authorize GitHub repositories for hosted traces")
-    .option("--no-browser", "Print the URL instead of opening a browser")
+    .option("--review <id>", "review ID")
+    .option("--session <id>", "review ID, as MCP tools name it")
     .action(
       async (options: {
-        origin?: string;
-        browser?: boolean;
-        traces?: boolean;
+        review?: string;
+        session?: string;
         json?: boolean;
       }) => {
-        state.exitCode = await runtime.runStoreLogin({
-          origin: options.origin,
-          noBrowser: options.browser === false,
-          traces: options.traces === true,
-          json: options.json,
+        const { runCommentsCli } = await import("./review-api/comments-cli.js");
+
+        state.exitCode = runCommentsCli({
+          ...options,
+          json: options.json ?? program.opts<{ json?: boolean }>().json,
           stdout: input.stdout,
           stderr: input.stderr,
+          env: authoringEnv(),
         });
-
-        if (state.exitCode === 0)
-          await attemptTelemetry(() =>
-            aliasInstallationToAccount(telemetry, env),
-          );
       },
     );
 
-  program
-    .command("logout")
-    .description("Forget the hosted trace store login")
-    .action(async () => {
-      state.exitCode = await runtime.runStoreLogout({ stdout: input.stdout });
-    });
-
-  configureJsonOutput(
-    program.command("whoami").description("Show the hosted trace store login"),
-    "plain",
-  ).action(async (options: { json?: boolean }) => {
-    state.exitCode = await runtime.runStoreWhoami({
-      json: options.json,
-      stdout: input.stdout,
-      stderr: input.stderr,
-    });
-  });
-
-  // The trace surface: inspect storage, manage one repository, or read events.
-  const trace = configureOutput(
-    program.command("trace").description("Manage agent traces"),
-    "plain",
-  );
-
-  registerTraceCommands(trace, {
-    runtime,
-    traceCommand,
-    scope,
-    cwd,
-    stdin: input.stdin,
-    stdout: input.stdout,
-    stderr: input.stderr,
-    configureOutput: (command) => configureOutput(command, "plain"),
-    configureJsonOutput: (command) => configureJsonOutput(command, "plain"),
-    verifyCommand: "whiteboard trace status",
-    setExitCode: (code) => {
-      state.exitCode = code;
-    },
-  });
-
-  // Storage selection and configuration migration write only the shared
-  // trace config; legacy files and remote objects are never touched.
-  const traceStorage = configureOutput(
-    trace.command("storage").description("Select the trace store"),
-    "plain",
-  );
-
-  configureJsonOutput(
-    traceStorage
-      .command("use <mode>")
-      .description("Select the s3 (S3/R2 bucket) or hosted trace store")
-      .option("--origin <url>", "hosted store origin")
-      .option("--endpoint <url>", "S3/R2 endpoint URL (s3)")
-      .option("--bucket <name>", "S3/R2 bucket name (s3)")
-      .option("--key <id>", "S3/R2 access key ID (s3)")
-      .option("--secret <key>", "S3/R2 secret access key (s3)")
-      .option("--region <region>", "S3/R2 signing region (s3)"),
-    "plain",
-  ).action(
-    async (
-      mode: string,
-      options: {
-        origin?: string;
-        endpoint?: string;
-        bucket?: string;
-        key?: string;
-        secret?: string;
-        region?: string;
-        json?: boolean;
-      },
-    ) => {
-      state.exitCode = await runtime.runTraceStorageUse({
-        cwd,
-        mode,
-        origin: options.origin,
-        endpoint: options.endpoint,
-        bucket: options.bucket,
-        key: options.key,
-        secret: options.secret,
-        region: options.region,
-        json: options.json,
-        stdout: input.stdout,
-        stderr: input.stderr,
-      });
-    },
-  );
-
-  const traceConfig = configureOutput(
-    trace.command("config").description("Manage trace storage configuration"),
-    "plain",
-  );
-
-  configureJsonOutput(
-    traceConfig
-      .command("migrate")
-      .description(
-        "Copy the legacy S3/R2 setup into $DEV_REVIEW_HOME/trace/config.json",
-      )
-      .option("--dry-run", "preview without writing")
-      .option(
-        "--keep-legacy",
-        "leave the legacy env and settings files in place instead of renaming them to legacy_*",
-      ),
-    "plain",
-  ).action(
-    async (options: {
-      dryRun?: boolean;
-      keepLegacy?: boolean;
-      json?: boolean;
-    }) => {
-      state.exitCode = await runtime.runTraceConfigMigrate({
-        dryRun: options.dryRun,
-        keepLegacy: options.keepLegacy,
-        json: options.json,
-        stdout: input.stdout,
-        stderr: input.stderr,
-      });
-    },
-  );
-
-  // Keep the established Review help order while app-only commands stay here.
-  const traceHelp = trace.createHelp();
-
-  trace.configureHelp({
-    visibleCommands: (command) => {
-      const commands = traceHelp.visibleCommands(command);
-      commands.splice(commands.indexOf(traceStorage), 1);
-      commands.splice(1, 0, traceStorage);
-      commands.splice(commands.indexOf(traceConfig), 1);
-      commands.splice(6, 0, traceConfig);
-
-      return commands;
-    },
-  });
-
   // The JSON authoring surface is owned by review-api/agent-cli.ts. Commander
   // passes the tool name and JSON payload through untouched, so these commands
-  // share the top-level help, the leading `--json` form, and the telemetry
-  // hooks without a separate parser.
+  // share the top-level help and the leading `--json` form without a
+  // separate parser.
   for (const [name, description] of [
     ["api", "Call a JSON review authoring tool on the running server"],
     ["mcp", "Serve the JSON review authoring tools over stdio MCP"],
@@ -1415,12 +1120,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         ...input,
         env: authoringEnv(),
         argv: [name, ...args],
-        onFailure: (error) => {
-          activeCause = error;
-        },
-        onDesktop: (appVersion) => telemetry.setDesktopVersion(appVersion),
-        onToolCall: (call) =>
-          attemptTelemetry(() => telemetry.captureToolCalled(call)),
       });
     });
   }
@@ -1431,90 +1130,15 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     if (actionCommand.optsWithGlobals().json === true) {
       state.json = true;
     }
-
-    const command = telemetryCommandPath(actionCommand);
-
-    if (!command) return;
-    const commandRunId = telemetry.createCommandRunId();
-    setTraceAttribute("command", command);
-    setTraceAttribute("commandRunId", commandRunId);
-    telemetry.setSurface(commandSurface(command));
-    activeTelemetry = {
-      command,
-      commandRunId,
-      startedAt: Date.now(),
-      finished: false,
-    };
-    await attemptTelemetry(() => telemetry.captureInstallationCreated());
-    await attemptTelemetry(() =>
-      telemetry.captureCommandStarted({ command, commandRunId }),
-    );
-  });
-  program.hook("postAction", async () => {
-    await finishActiveTelemetry(
-      telemetry,
-      activeTelemetry,
-      state.exitCode,
-      activeCause,
-      telemetryProperties,
-    );
   });
 
   try {
-    await withStoreAuthorization(
-      async (origin) => {
-        if (
-          state.json ||
-          input.stdin?.isTTY !== true ||
-          input.argv[0] !== "trace" ||
-          input.argv.some((arg) => /hook/i.test(arg))
-        )
-          return undefined;
-
-        const prompt = createInterface({
-          input: input.stdin,
-          output: input.stderr,
-        });
-
-        let answer: string;
-
-        try {
-          answer = await prompt.question(
-            "Authorize GitHub repositories for hosted traces? [y/N] ",
-          );
-        } finally {
-          prompt.close();
-        }
-
-        if (!/^y(es)?$/i.test(answer.trim())) return undefined;
-
-        const code = await runtime.runStoreLogin({
-          origin,
-          traces: true,
-          stdout: input.stdout,
-          stderr: input.stderr,
-          env: input.env,
-        });
-
-        return code === 0 ? (await readStoreAuth(input.env))?.token : undefined;
-      },
-      () => program.parseAsync(input.argv, { from: "user" }),
-    );
+    await program.parseAsync(input.argv, { from: "user" });
 
     return state.exitCode;
   } catch (error) {
     if (error instanceof CommanderError) {
-      if (error.exitCode === 0) {
-        await captureOneOffCommand(
-          telemetry,
-          input.argv.includes("--version") || input.argv.includes("-V")
-            ? "version"
-            : "help",
-          0,
-        );
-
-        return 0;
-      }
+      if (error.exitCode === 0) return 0;
 
       const surface = state.parseSurface;
 
@@ -1537,51 +1161,19 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         );
       }
 
-      await finishActiveTelemetry(
-        telemetry,
-        activeTelemetry,
-        1,
-        error,
-        telemetryProperties,
-      );
-
-      if (!activeTelemetry) {
-        await captureOneOffCommand(telemetry, "invalid", 1, error);
-      }
-
       return 1;
     }
 
     if (state.json) {
-      const serialized: ReturnType<typeof serializeReviewError> & {
-        code?: string;
-        remedy?: string;
-      } = serializeReviewError(error);
-
-      if (
-        error instanceof StoreApiError &&
-        error.code === "repository_authorization_required"
-      ) {
-        serialized.code = error.code;
-        serialized.remedy = "whiteboard login --traces";
-      }
-
-      emitReviewEvent(input.stdout, { event: "error", error: serialized });
+      emitReviewEvent(input.stdout, {
+        event: "error",
+        error: serializeReviewError(error),
+      });
     } else {
       input.stderr.write(ensureTrailingNewline(formatCliError(error)));
     }
 
-    await finishActiveTelemetry(
-      telemetry,
-      activeTelemetry,
-      1,
-      error,
-      telemetryProperties,
-    );
-
     return 1;
-  } finally {
-    await attemptTelemetry(() => telemetry.shutdown(1_000));
   }
 }
 
@@ -1622,29 +1214,6 @@ function reviewCliRuntime(
     runReviewAppLaunch,
     runReviewAppPick,
     runReviewInfo,
-    runTraceStatus,
-    runTraceEnable,
-    runTraceDisable,
-    runTraceRepair,
-    runTraceList,
-    runTraceShow,
-    runTracePull,
-    runTraceBlame,
-    runTraceHook,
-    runTraceGitHook,
-    runTraceSync,
-    runTraceStorageUse,
-    runTraceConfigMigrate,
-    runTraceInstallMachine,
-    runTraceOnboard,
-    runTraceStoreDelete,
-    runTraceStoreInfo,
-    runTraceSessions,
-    runTraceAllow,
-    runTraceDeny,
-    runStoreLogin,
-    runStoreLogout,
-    runStoreWhoami,
     ...overrides,
   };
 }
@@ -1683,218 +1252,6 @@ function reviewTopLevelHelp(): string {
     "",
     "  Start concise and let me dig deeper through the canvas.",
   ].join("\n");
-}
-
-async function finishActiveTelemetry(
-  telemetry: ReviewCommandTelemetry,
-  active:
-    | {
-        command: ReviewCliCommandPath;
-        commandRunId: string;
-        startedAt: number;
-        finished: boolean;
-      }
-    | undefined,
-  exitCode: number,
-  cause?: unknown,
-  properties: Record<string, boolean | number | string | null | undefined> = {},
-): Promise<void> {
-  if (!active || active.finished) return;
-  active.finished = true;
-  const classification = errorClassification(active.command, cause);
-  await attemptTelemetry(() =>
-    exitCode === 0
-      ? telemetry.captureCommandSucceeded({
-          command: active.command,
-          commandRunId: active.commandRunId,
-          exitCode,
-          durationMs: Date.now() - active.startedAt,
-          properties,
-        })
-      : telemetry.captureCommandFailed({
-          command: active.command,
-          commandRunId: active.commandRunId,
-          exitCode,
-          durationMs: Date.now() - active.startedAt,
-          properties,
-          ...classification,
-        }),
-  );
-}
-
-async function captureOneOffCommand(
-  telemetry: ReviewCommandTelemetry,
-  command: ReviewCliCommandPath,
-  exitCode: number,
-  cause?: unknown,
-): Promise<void> {
-  const commandRunId = telemetry.createCommandRunId();
-  await attemptTelemetry(() => telemetry.captureInstallationCreated());
-  await attemptTelemetry(() =>
-    telemetry.captureCommandStarted({ command, commandRunId }),
-  );
-  const classification = errorClassification(command, cause);
-  await attemptTelemetry(() =>
-    exitCode === 0
-      ? telemetry.captureCommandSucceeded({
-          command,
-          commandRunId,
-          exitCode,
-          durationMs: 0,
-        })
-      : telemetry.captureCommandFailed({
-          command,
-          commandRunId,
-          exitCode,
-          durationMs: 0,
-          ...classification,
-        }),
-  );
-}
-
-function telemetryCommandPath(
-  command: Command,
-): ReviewCliCommandPath | undefined {
-  const name = command.name();
-  const parent = command.parent?.name();
-
-  if (parent === "migrate" && name === "apply") return "migrate.apply";
-
-  if (parent === "trace") {
-    if (name === "allow" || name === "deny" || name === "install") {
-      return `trace.${name}`;
-    }
-  }
-
-  if (parent === "store" && command.parent?.parent?.name() === "trace") {
-    if (name === "create" || name === "delete" || name === "info") {
-      return `trace.store.${name}`;
-    }
-  }
-
-  if (parent === "storage" && name === "use") return "trace.storage.use";
-
-  if (parent === "config" && name === "migrate") return "trace.config.migrate";
-
-  if (parent === "server" && name === "start") return "server.start";
-
-  if (name === "login" || name === "logout" || name === "whoami") return name;
-
-  if (name === "api" || name === "mcp" || name === "connect") return name;
-
-  if (parent === "app" && (name === "launch" || name === "pick")) {
-    return `app.${name}`;
-  }
-
-  if (parent === "instances" && (name === "use" || name === "clear"))
-    return `instances.${name}`;
-
-  if (name === "version" || name === "info" || name === "instances") {
-    return name;
-  }
-
-  // Bare `app` takes no --session; picking is only `app pick`.
-  if (name === "app") return "app.launch";
-
-  return undefined;
-}
-
-function commandSurface(command: ReviewCliCommandPath): ReviewTelemetrySurface {
-  if (command === "server.start") return "headless";
-
-  if (command === "mcp") return "mcp";
-
-  if (command === "api") return "api";
-
-  return "cli";
-}
-
-interface ErrorClassification {
-  errorName: ReviewTelemetryErrorName;
-  errorCategory: ReviewTelemetryErrorCategory;
-}
-
-function errorClassification(
-  command: ReviewCliCommandPath,
-  cause: unknown,
-): ErrorClassification {
-  if (cause instanceof CommanderError || command === "invalid") {
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (
-    cause instanceof ReviewCliUsageError ||
-    cause instanceof ReviewAppUsageError
-  ) {
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (cause instanceof ReviewAppStateError) {
-    return {
-      errorName: "review_state_error",
-      errorCategory: "local_state",
-    };
-  }
-
-  if (cause instanceof ReviewInstanceUnavailableError) {
-    return {
-      errorName: "desktop_connection_error",
-      errorCategory: "dependency",
-    };
-  }
-
-  if (cause instanceof ReviewApiError) {
-    if (cause.status === 404)
-      return { errorName: "review_not_found", errorCategory: "local_state" };
-
-    if (cause.status >= 500)
-      return { errorName: "unexpected_error", errorCategory: "internal" };
-
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (cause instanceof Error && "code" in cause) {
-    const code = cause.code;
-
-    if (code === "EADDRINUSE" || code === "ECONNREFUSED") {
-      return { errorName: "network_error", errorCategory: "transport" };
-    }
-  }
-
-  if (command === "api" && cause instanceof TypeError) {
-    return { errorName: "network_error", errorCategory: "transport" };
-  }
-
-  const name = cause instanceof Error ? cause.name.toLowerCase() : "";
-
-  if (name.includes("notfound")) {
-    return { errorName: "review_not_found", errorCategory: "local_state" };
-  }
-
-  if (command.startsWith("app.")) {
-    return {
-      errorName: "desktop_connection_error",
-      errorCategory: "dependency",
-    };
-  }
-
-  if (command === "info") {
-    return { errorName: "review_state_error", errorCategory: "local_state" };
-  }
-
-  if (cause) {
-    return { errorName: "unexpected_error", errorCategory: "internal" };
-  }
-
-  return { errorName: "process_error", errorCategory: "dependency" };
-}
-
-async function attemptTelemetry(fn: () => Promise<void>): Promise<void> {
-  try {
-    await span("telemetry capture", fn);
-  } catch {
-    // Telemetry must never affect CLI behavior.
-  }
 }
 
 function commanderErrorMessage(error: CommanderError): string {

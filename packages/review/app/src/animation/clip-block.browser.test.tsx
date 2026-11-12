@@ -114,7 +114,6 @@ async function mount(block: Block) {
         progress,
         commits: [],
         images: {},
-        traces: {},
         maps: {},
       }),
     );

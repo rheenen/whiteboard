@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { spawn } from "node:child_process";
-import { app, BrowserWindow, powerMonitor, session } from "electron";
+import { powerMonitor, session } from "electron";
 import { Disposable, toDisposable } from "../../base/common/lifecycle.js";
 import { join } from "../../base/common/path.js";
 import { IConfigurationService } from "../../platform/configuration/common/configuration.js";
@@ -17,9 +17,7 @@ import {
 import { ILogService } from "../../platform/log/common/log.js";
 import { IProductService } from "../../platform/product/common/productService.js";
 import { getResolvedShellEnv } from "../../platform/shell/node/shellEnv.js";
-import { IApplicationStorageMainService } from "../../platform/storage/electron-main/storageMainService.js";
 import { NullTelemetryService } from "../../platform/telemetry/common/telemetryUtils.js";
-import { IUpdateService } from "../../platform/update/common/update.js";
 import { UtilityProcess } from "../../platform/utilityProcess/electron-main/utilityProcess.js";
 import { IWindowsMainService } from "../../platform/windows/electron-main/windows.js";
 import { resolveReviewServerEntry, type ReviewDesktopConnection } from "../common/reviewDesktopBootstrap.js";
@@ -32,19 +30,13 @@ import {
   REVIEW_REMOTE_HOSTS_SETTING,
   REVIEW_REMOTE_INSTALL_MODES,
   REVIEW_REMOTE_INSTALL_SETTING,
-  REVIEW_SERVICE_URL_SETTING,
-  REVIEW_TELEMETRY_SETTING,
 } from "../common/reviewConfigurationDefaults.js";
 import { remoteHostAliases } from "../common/reviewSshAlias.js";
 import {
   REVIEW_REMOTE_INSTALL_NO,
   REVIEW_REMOTE_INSTALL_YES,
 } from "../common/reviewSshPrompt.js";
-import { REVIEW_CRASH_DUMPS_DIRNAME } from "../node/reviewCrashReporter.js";
 import { reviewLoopbackCertVerdict } from "../node/reviewLoopbackCert.js";
-import { ReviewCrashDumps } from "./reviewCrashDumps.js";
-import { ReviewCrashTelemetry } from "./reviewCrashTelemetry.js";
-import { ReviewMainErrorTelemetry } from "./reviewMainErrorTelemetry.js";
 import { reviewEnabledExtensionGroups } from "./remote/reviewEnabledExtensionGroups.js";
 import {
   REVIEW_REMOTE_RELEASES_ENV,
@@ -55,7 +47,7 @@ import type {
   ReviewRemoteInstallFlow,
   ReviewRemoteInstallMode,
 } from "./remote/reviewRemoteHost.js";
-import { closeRemoteHostWindows, ReviewRemoteHosts, type ReviewRemoteHostsOptions } from "./remote/reviewRemoteHosts.js";
+import { closeRemoteHostWindows, ReviewRemoteHosts } from "./remote/reviewRemoteHosts.js";
 import {
   openRemoteInstallConsent,
   reviewRemoteInstallConsentPath,
@@ -72,10 +64,6 @@ import {
 import { listSshAliases } from "./remote/reviewSshConfigAliases.js";
 import { reviewSshPromptRelay } from "./remote/reviewSshPromptRelay.js";
 import { ReviewServerSupervisor } from "./reviewServerSupervisor.js";
-import {
-  darwinShipItLogPath,
-  ReviewUpdateTelemetry,
-} from "./reviewUpdateTelemetry.js";
 
 /**
  * Binds the embedded Review server's lifetime to the application's. All of the
@@ -103,9 +91,6 @@ export class ReviewDesktopHost extends Disposable {
     @IEnvironmentMainService
     private readonly environmentMainService: IEnvironmentMainService,
     @IProductService private readonly productService: IProductService,
-    @IUpdateService private readonly updateService: IUpdateService,
-    @IApplicationStorageMainService
-    private readonly applicationStorageMainService: IApplicationStorageMainService,
     @IInstantiationService
     private readonly instantiationService: IInstantiationService,
   ) {
@@ -118,12 +103,6 @@ export class ReviewDesktopHost extends Disposable {
         this.environmentMainService.args,
         process.env,
       ));
-    let crashTelemetry: ReviewCrashTelemetry | undefined;
-    let errorTelemetry: ReviewMainErrorTelemetry | undefined;
-    const crashDumpsDir = join(
-      this.environmentMainService.userDataPath,
-      REVIEW_CRASH_DUMPS_DIRNAME,
-    );
     this.supervisor = this._register(
       new ReviewServerSupervisor({
         appRoot: this.environmentMainService.appRoot,
@@ -148,18 +127,6 @@ export class ReviewDesktopHost extends Disposable {
             NullTelemetryService,
             this.lifecycleMainService,
           ),
-        telemetryEnabled:
-          this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-          false,
-        serviceOrigin: this.configurationService
-          .getValue<string>(REVIEW_SERVICE_URL_SETTING)
-          ?.trim(),
-        crashDumpsDir,
-        onServerTerminated: (detail) => {
-          errorTelemetry?.serverLost();
-          crashTelemetry?.reportServerExit(detail);
-        },
-        onServerReady: () => errorTelemetry?.serverReady(),
         onRemoteHostRestarted: (alias) => this.remoteHosts?.reattach(alias),
       }),
     );
@@ -170,16 +137,6 @@ export class ReviewDesktopHost extends Disposable {
         callback(reviewLoopbackCertVerdict(request, fingerprint)),
       );
     this._register(
-      this.configurationService.onDidChangeConfiguration((event) => {
-        if (!event.affectsConfiguration(REVIEW_TELEMETRY_SETTING)) return;
-        this.supervisor.setTelemetryEnabled(
-          this.configurationService.getValue<boolean>(
-            REVIEW_TELEMETRY_SETTING,
-          ) !== false,
-        );
-      }),
-    );
-    this._register(
       this.lifecycleMainService.onWillShutdown((event) => {
         event.join("reviewDesktopHost", this.supervisor.stop());
         if (this.remoteHosts)
@@ -188,67 +145,7 @@ export class ReviewDesktopHost extends Disposable {
     );
     void this.lifecycleMainService
       .when(LifecycleMainPhase.AfterWindowOpen)
-      .then(() =>
-        this.startRemoteHosts(shellEnvironment, (name, properties) =>
-          errorTelemetry?.capture(name, properties),
-        ),
-      );
-    // Main-process errors report through the embedded server, so they pass the
-    // same opt-out checks and the same redaction step as every other event.
-    errorTelemetry = new ReviewMainErrorTelemetry({
-      whenConnected: () => this.whenConnected(),
-      isTelemetryEnabled: () =>
-        this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-        false,
-      userDataPath: this.environmentMainService.userDataPath,
-      logError: (message) => this.logService.error(message),
-    });
-    const mainTelemetry = errorTelemetry;
-    this._register(toDisposable(() => mainTelemetry.dispose()));
-    const crashDumps = new ReviewCrashDumps({
-      dumpsDir: crashDumpsDir,
-      launch: {
-        startedAt: Date.now(),
-        appSessionId: this.supervisor.appSessionId,
-        appVersion:
-          this.productService.reviewVersion ?? this.productService.version,
-      },
-      whenConnected: () => this.whenConnected(),
-      isTelemetryEnabled: () =>
-        this.configurationService.getValue<boolean>(REVIEW_TELEMETRY_SETTING) !==
-        false,
-      logError: (message) => this.logService.error(message),
-    });
-    crashTelemetry = this._register(
-      new ReviewCrashTelemetry({
-        app,
-        windows: BrowserWindow.getAllWindows(),
-        capture: (name, properties, onDelivered) =>
-          mainTelemetry.capture(name, properties, undefined, onDelivered),
-        onCrashRecorded: (at) => crashDumps.recordLiveCrash(at),
-      }),
-    );
-    crashDumps.reconcile().catch((error) =>
-      this.logService.error(`[Review Desktop] crash dump reconcile failed: ${error}`),
-    );
-    this._register(
-      new ReviewUpdateTelemetry({
-        updateService: this.updateService,
-        storageService: this.applicationStorageMainService,
-        telemetry: mainTelemetry,
-        isTelemetryEnabled: () =>
-          this.configurationService.getValue<boolean>(
-            REVIEW_TELEMETRY_SETTING,
-          ) !== false,
-        shipItLogPath: this.productService.darwinBundleIdentifier
-          ? darwinShipItLogPath(
-              this.environmentMainService.userHome.fsPath,
-              this.productService.darwinBundleIdentifier,
-            )
-          : undefined,
-        logError: (message) => this.logService.error(message),
-      }),
-    );
+      .then(() => this.startRemoteHosts(shellEnvironment));
     process.once("SIGINT", this.onTerminationSignal);
     process.once("SIGTERM", this.onTerminationSignal);
     this.supervisor.start();
@@ -325,7 +222,6 @@ export class ReviewDesktopHost extends Disposable {
     const { userDataPath, appRoot, isBuilt } = this.environmentMainService;
     let script: Promise<string> | undefined;
     const artifactsOptions = {
-      pin: this.productService.whiteboardRemote,
       releases: process.env[REVIEW_REMOTE_RELEASES_ENV],
     };
     return {
@@ -371,7 +267,6 @@ export class ReviewDesktopHost extends Disposable {
 
   private startRemoteHosts(
     shellEnvironment: () => Promise<NodeJS.ProcessEnv>,
-    capture: ReviewRemoteHostsOptions["capture"],
   ): void {
     if (this.disposed) return;
     let version: Promise<string> | undefined;
@@ -401,7 +296,6 @@ export class ReviewDesktopHost extends Disposable {
       groups: () =>
         reviewEnabledExtensionGroups(this.environmentMainService.extensionsPath),
       send: (hosts) => this.supervisor.setRemoteHosts(hosts),
-      capture,
       log: (message) => this.logService.info(`[Remote hosts] ${message}`),
       install: this.remoteInstallFlow(),
       removed: (serverId) =>

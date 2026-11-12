@@ -31,12 +31,12 @@ import {
   useCanvasQueryScope,
 } from "./canvas-query";
 import { ConnectionContext, HostWaiting } from "./connection-chip";
+import { ExportContext } from "./export-context";
 import { hostApiClient, useReviewSession } from "./host/review-session";
 import { useBoardPlace } from "./review-doc-meta";
 import type { ReviewTocEntry } from "./review-document-headings";
 import type { ReviewFindHost } from "./review-find";
 import { useReviewStack } from "./review-stack-selector";
-import { SharingContext } from "./share-control";
 import { tokens } from "./tokens.stylex";
 import { Button } from "./ui/button";
 import {
@@ -361,17 +361,12 @@ export function ApiCanvas({
     if (data) setPainted(true);
   }, [Boolean(data)]);
 
-  const sharing = useMemo(
+  const exportable = useMemo(
     () =>
       data && !data.snapshot.trashedAt && !data.snapshot.sourceUnavailable
-        ? {
-            client,
-            reviewId: content.reviewId,
-            version: data.snapshot.version,
-            sender: data.snapshot.shared?.login,
-          }
+        ? { reviewId: content.reviewId, version: data.snapshot.version }
         : null,
-    [client, content.reviewId, data],
+    [content.reviewId, data],
   );
 
   const trashBanner = trashedAt && (
@@ -488,7 +483,7 @@ export function ApiCanvas({
     <div {...stylex.props(styles.canvasSurface)}>
       <CanvasQueryProvider scope={queries}>
         <SharedCanvasQueryClient.Provider value={queries.queryClient}>
-          <SharingContext.Provider value={sharing}>
+          <ExportContext.Provider value={exportable}>
             <ConnectionContext.Provider value={connection}>
               <SaveMarkdown.Provider value={saveMarkdown}>
                 <BoardPaintedContext.Provider value={painted}>
@@ -519,7 +514,7 @@ export function ApiCanvas({
                 </BoardPaintedContext.Provider>
               </SaveMarkdown.Provider>
             </ConnectionContext.Provider>
-          </SharingContext.Provider>
+          </ExportContext.Provider>
         </SharedCanvasQueryClient.Provider>
       </CanvasQueryProvider>
     </div>

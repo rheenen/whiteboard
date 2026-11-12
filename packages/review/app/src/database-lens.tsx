@@ -52,7 +52,6 @@ import {
 } from "./software-map/SoftwareMap";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 import { useDiagramSelection } from "./use-diagram-selection";
 
 type OperationKind = "read" | "write";
@@ -461,21 +460,11 @@ export function DatabaseLens(block: DatabaseLensProps) {
     (anchor?: string) => {
       if (!activeTour) return;
 
-      if (anchor) {
-        captureUiEvent(session, "peek_opened", { via: "db_lens" });
-      }
-
       if (anchor && selectInline(anchor)) return;
 
       const nextAnchor = anchor ?? tourAnchor ?? activeTour.stops[0]?.anchor.id;
 
       if (!nextAnchor) return;
-
-      if (!tourOpen) {
-        captureUiEvent(session, "tour_started", {
-          steps: activeTour.stops.length,
-        });
-      }
 
       panelStore
         .getState()

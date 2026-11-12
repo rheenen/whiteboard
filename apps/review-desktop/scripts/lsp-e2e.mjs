@@ -65,7 +65,6 @@ const env = {
   ...process.env,
   DEV_REVIEW_HOME: home,
   DEV_REVIEW_IMPORT_FROM: "none",
-  DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
   REVIEW_LSP_E2E_ROOT: root,
 };
 
@@ -635,7 +634,12 @@ async function expectHover(sourceUri, position, expected) {
 // The base side is plain text, as a git diff original is in Code OSS.
 async function expectNoLanguageFeatures(sourceUri, position) {
   for (const feature of [hover, definition]) {
-    const result = await probe({ uri: sourceUri, ...position, feature, open: true });
+    const result = await probe({
+      uri: sourceUri,
+      ...position,
+      feature,
+      open: true,
+    });
 
     assert.equal(result.result?.length ?? 0, 0, feature);
   }
@@ -697,7 +701,12 @@ try {
     "prepared",
   );
 
-  await expectDefinition(uri(review), greetAt, uri(review, "head", "library.ts"), 2);
+  await expectDefinition(
+    uri(review),
+    greetAt,
+    uri(review, "head", "library.ts"),
+    2,
+  );
   await expectHover(uri(review), greetAt, "string");
   await expectNoLanguageFeatures(uri(review, "base"), greetAt);
 
@@ -878,7 +887,12 @@ try {
 
   const workingMain = await readFile(path.join(first.repo, "main.ts"), "utf8");
 
-  await expectDefinition(uri(review), greetAt, uri(review, "head", "library.ts"), 2);
+  await expectDefinition(
+    uri(review),
+    greetAt,
+    uri(review, "head", "library.ts"),
+    2,
+  );
   const pinnedHover = await expectHover(uri(review), greetAt, "string");
   assert.equal(pinnedHover.document.text, mainText("head"));
   await expectDefinition(
@@ -995,7 +1009,10 @@ try {
     "branch changes do not repin review content or change pinned LSP",
   );
 
-  await expectNoLanguageFeatures(uri(review, "base", "old.ts"), { line: 0, character: 25 });
+  await expectNoLanguageFeatures(uri(review, "base", "old.ts"), {
+    line: 0,
+    character: 25,
+  });
   await expectDefinition(
     uri(review, "head", "renamed.ts"),
     { line: 0, character: 25 },

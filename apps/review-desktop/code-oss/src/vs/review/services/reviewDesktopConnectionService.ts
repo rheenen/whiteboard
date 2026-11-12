@@ -6,8 +6,6 @@
 import { Emitter,Event } from "../../base/common/event.js";
 import { Disposable } from "../../base/common/lifecycle.js";
 import { createDecorator } from "../../platform/instantiation/common/instantiation.js";
-import { IStorageService } from "../../platform/storage/common/storage.js";
-import { markReviewFeedbackSubmitted } from "../common/reviewFeedbackState.js";
 import { IMainProcessService } from "../../platform/ipc/common/mainProcessService.js";
 import {
 REVIEW_DESKTOP_CHANNEL,
@@ -19,9 +17,6 @@ import { consumeReviewEventStream } from "../common/reviewEventStream.js";
 import type { ReviewExternalEditorTarget } from "../common/reviewExternalEditor.js";
 import {
 type JsonValue,
-	type ReviewFeedback,
-	type ReviewFeedbackContact,
-	type ReviewFeedbackSubmissionResult,
 	type ReviewDiffrConfig,
 	type ReviewDiffrSummarizerInput,
 	isJsonObject,
@@ -45,7 +40,7 @@ import {
 export interface ReviewServerConnection {
 	readonly serverUrl: string;
 	readonly token: string;
-	/** The launch's id, minted by the main process; canvas telemetry carries it. */
+	/** The launch's id, minted by the main process. */
 	readonly appSessionId: string;
 }
 
@@ -70,9 +65,6 @@ export interface IReviewDesktopConnectionService {
 	getConnection(): Promise<ReviewServerConnection>;
 	/** Why this connection fell back from https to plain HTTP, if it did. */
 	readonly secureUrlError: string | undefined;
-	submitFeedback(response: Omit<ReviewFeedback, "id">): Promise<ReviewFeedbackSubmissionResult>;
-	submitFeedbackContact(contact: Omit<ReviewFeedbackContact, "id">): Promise<ReviewFeedbackSubmissionResult>;
-	feedbackEligible(): Promise<boolean>;
 	/** Closes the reviews' source windows, whose checkouts dismissal and deletion free. */
 	closeSourceWindows(reviewIds: readonly string[]): Promise<void>;
 	/** Opens a file in the reader's editor, from the main process with a clean environment. */
@@ -101,9 +93,8 @@ export interface IReviewDesktopConnectionService {
 	applyCliInstall(request: {
 		autoUpdate?: boolean;
 		shim?: boolean;
-		trace?: true | { endpoint?: string; bucket?: string; key?: string; secret?: string };
 	}): Promise<ReviewCliInstallApplyResponse>;
-	removeCliInstall(request: { shim?: boolean; trace?: true }): Promise<void>;
+	removeCliInstall(request: { shim?: boolean }): Promise<void>;
 	removeLegacySkills(): Promise<void>;
 	finishCliInstallUpdate(): Promise<void>;
 	declineCliInstall(): Promise<void>;
@@ -142,8 +133,7 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 
 	constructor(
 		@IMainProcessService
-		private readonly mainProcessService: IMainProcessService,
-		@IStorageService private readonly storageService: IStorageService,
+		private readonly mainProcessService: IMainProcessService
 	) {
 		super();
 	}
@@ -210,51 +200,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 
 	chooseApplication(): Promise<string | null> {
 		return this.mainProcessService.getChannel(REVIEW_DESKTOP_CHANNEL).call<string | null>("chooseApplication");
-	}
-
-	async submitFeedback(input: Omit<ReviewFeedback, "id">): Promise<ReviewFeedbackSubmissionResult> {
-		const result = await this.postFeedback("/feedback", input);
-		if (result.ok) markReviewFeedbackSubmitted(this.storageService);
-		return result;
-	}
-
-	async submitFeedbackContact(input: Omit<ReviewFeedbackContact, "id">): Promise<ReviewFeedbackSubmissionResult> {
-		return this.postFeedback("/feedback/contact", input);
-	}
-
-	private async postFeedback(path: string, input: Omit<ReviewFeedback, "id"> | Omit<ReviewFeedbackContact, "id">): Promise<ReviewFeedbackSubmissionResult> {
-		if (!this.connection) return { ok: false, error: "network" };
-		const id = this.connection.installationId;
-		if (!id) return { ok: false, error: "receiver" };
-		const signal = AbortSignal.timeout(5_000);
-		let response: Response;
-		try {
-			response = await fetch(`${this.serverUrl}${path}`, {
-				method: "POST",
-				headers: { ...this.authHeaders(), "content-type": "application/json" },
-				body: JSON.stringify({ ...input, id }),
-				signal,
-			});
-		} catch {
-			return { ok: false, error: "network" };
-		}
-		try {
-			const body = await response.json();
-			if (response.ok && body?.ok === true) return { ok: true };
-			return { ok: false, error: body?.code === "network" ? "network" : "receiver" };
-		} catch {
-			return { ok: false, error: signal.aborted ? "network" : "receiver" };
-		}
-	}
-
-	async feedbackEligible(): Promise<boolean> {
-		await this.initialize();
-		const response = await fetch(`${this.serverUrl}/reviews-api/feedback-eligibility`, {
-			headers: this.authHeaders(),
-			signal: AbortSignal.timeout(5_000),
-		});
-		if (!response.ok) throw new Error("Could not read feedback eligibility.");
-		return (await response.json()).eligible === true;
 	}
 
 	async readDiffrConfig(): Promise<ReviewDiffrConfig> {
@@ -409,7 +354,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 	async applyCliInstall(request: {
 		autoUpdate?: boolean;
 		shim?: boolean;
-		trace?: true | { endpoint?: string; bucket?: string; key?: string; secret?: string };
 	}): Promise<ReviewCliInstallApplyResponse> {
 		await this.initialize();
 		const response = await fetch(`${this.serverUrl}/install/apply`, {
@@ -421,7 +365,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 			body: JSON.stringify({
 				...(request.autoUpdate ? { autoUpdate: true } : {}),
 				...(request.shim !== undefined ? { shim: request.shim } : {}),
-				...(request.trace !== undefined ? { trace: request.trace } : {}),
 			}),
 			signal: AbortSignal.timeout(120_000),
 		});
@@ -439,7 +382,7 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 		return parseReviewCliInstallApplyResponse(payload);
 	}
 
-	async removeCliInstall(request: { shim?: boolean; trace?: true }): Promise<void> {
+	async removeCliInstall(request: { shim?: boolean }): Promise<void> {
 		await this.initialize();
 		const response = await fetch(`${this.serverUrl}/install/remove`, {
 			method: "POST",
@@ -449,7 +392,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 			},
 			body: JSON.stringify({
 				...(request.shim ? { shim: true } : {}),
-				...(request.trace ? { trace: true } : {}),
 			}),
 			signal: AbortSignal.timeout(30_000),
 		});

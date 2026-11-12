@@ -63,10 +63,13 @@ export const blocks = {
   callout,
 } satisfies Definitions;
 
+/** Kinds stored boards may still hold, which agents can no longer write. */
+export const retiredBlockTypes: readonly BlockType[] = ["trace_quote"];
+
 /** Every block type an agent may write. */
-export const writableBlockTypes: readonly BlockType[] = Object.values(
-  blocks,
-).map((block) => block.type);
+export const writableBlockTypes: readonly BlockType[] = Object.values(blocks)
+  .map((block) => block.type)
+  .filter((type) => !retiredBlockTypes.includes(type));
 
 // The order agents have always read the reference in, not the record's.
 const referenceOrder: readonly BlockType[] = [
@@ -77,7 +80,6 @@ const referenceOrder: readonly BlockType[] = [
   "section",
   "callout",
   "image",
-  "trace_quote",
   "software_map",
   "sequence",
   "flow_diagram",

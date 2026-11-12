@@ -4,8 +4,10 @@ import {
   ReviewCommitSummarySchema,
   type ReviewTheme,
 } from "@dev.fast/review-protocol";
-import { shareBundleSchema } from "@dev.fast/review-share-protocol";
-import { traceSchema } from "@review/review-api/trace-schema";
+import {
+  repositoryLabel,
+  shareBundleSchema,
+} from "@dev.fast/review-share-protocol";
 import { z } from "zod";
 
 import { boardSnapshotSchema, boardView } from "./board-data";
@@ -30,7 +32,7 @@ export async function openShare(
   const bundle = shareBundleSchema.parse(share);
   const snapshot = boardSnapshotSchema.parse(bundle.snapshot);
   const { pins } = snapshot;
-  const cloneUrl = bundle.repository?.cloneUrl;
+  const cloneUrl = bundle.repository?.cloneUrl ?? bundle.remote?.url;
 
   const data = boardView(
     {
@@ -39,7 +41,7 @@ export async function openShare(
       shared: { cloneUrl },
     },
     {
-      traces: z.record(z.string(), traceSchema).parse(bundle.traces),
+      // A bundle may still carry retired trace quotes; their traces are ignored.
       // SAFETY: the sharer wrote these maps; a malformed one fails in its block.
       maps: bundle.maps as Record<string, SavedMap>,
       commits: z.array(ReviewCommitSummarySchema).parse(bundle.commits),
@@ -72,10 +74,3 @@ export async function openShare(
     },
   };
 }
-
-/** "owner / repo", as Desktop names a board's repository. */
-const repositoryLabel = (cloneUrl: string) =>
-  new URL(cloneUrl).pathname
-    .slice(1)
-    .replace(/\.git$/, "")
-    .replaceAll("/", " / ");

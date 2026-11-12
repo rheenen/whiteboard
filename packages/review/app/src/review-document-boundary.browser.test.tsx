@@ -1,8 +1,4 @@
-import {
-  type JsonObject,
-  isJsonObject,
-  parseJsonText,
-} from "@dev.fast/review-protocol";
+import type { JsonObject } from "@dev.fast/review-protocol";
 import { StrictMode, act } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -53,7 +49,7 @@ describe("ReviewDocumentBoundary", () => {
     await act(async () => {
       root.render(
         <StrictMode>
-          <div data-testid="shell">Files Map Trace</div>
+          <div data-testid="shell">Files Map</div>
           <ReviewDocumentBoundary
             key="bad-1"
             revision="bad-1"
@@ -67,31 +63,17 @@ describe("ReviewDocumentBoundary", () => {
     });
 
     expect(container.querySelector('[data-testid="shell"]')?.textContent).toBe(
-      "Files Map Trace",
+      "Files Map",
     );
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "Your coding agent is writing the canvas now",
     );
     expect(onError).toHaveBeenCalledWith("bad-1", expect.any(TypeError));
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(clientErrorReports()).toEqual([
-      expect.objectContaining({
-        name: "client_error",
-        properties: expect.objectContaining({
-          error_source: "render",
-          error_name: "TypeError",
-        }),
-        error: expect.objectContaining({
-          name: "TypeError",
-          message: "sequence actor exploded",
-        }),
-      }),
-    ]);
-
     await act(async () => {
       root.render(
         <StrictMode>
-          <div data-testid="shell">Files Map Trace</div>
+          <div data-testid="shell">Files Map</div>
           <ReviewDocumentBoundary
             key="good-2"
             revision="good-2"
@@ -113,20 +95,6 @@ describe("ReviewDocumentBoundary", () => {
 
 function ThrowingDocument(): never {
   throw new TypeError("sequence actor exploded");
-}
-
-function clientErrorReports(): JsonObject[] {
-  return request.mock.calls
-    .filter(([url]) => url.includes("/telemetry/event"))
-    .map(([, init]) => {
-      const body = parseJsonText(String(init?.body));
-
-      if (!isJsonObject(body)) {
-        throw new Error("Telemetry event body is not an object");
-      }
-
-      return body;
-    });
 }
 
 function jsonResponse(body: JsonObject): Response {

@@ -12,21 +12,8 @@ import {
   type ReviewCliInstallStatus,
 } from "@dev.fast/review-protocol";
 import {
-  AGENT_TRACE_HOOK_AGENTS,
-  type TraceCredentialsInput,
-  configureTraceMachine,
-  describeTraceHookOwners,
   devReviewHome,
-  disableAllTraceRepositories,
-  disableTraceMachine,
-  enableTraceRepository,
-  installHarnessHooks,
-  listTraceRepositoryRoots,
-  removeAgentTraceHook,
-  traceMachineEnabled,
-  traceMachineStatus,
-  traceRepositoryStatus,
-  traceScope,
+  removeLegacyTraceHooks,
   withFileLock,
   writeFileAtomicAsync,
   writePrivateJsonAtomic,
@@ -115,12 +102,11 @@ export async function resolveCliInstallStatus(input: {
   const shimPath = pathShimPath(homeDir);
   const cliPath = path.join(input.packageRoot, "dist", "cli.js");
 
-  const [fingerprint, stamp, updated, trace, legacySkills, cliBuilt, hasShim] =
+  const [fingerprint, stamp, updated, legacySkills, cliBuilt, hasShim] =
     await Promise.all([
       installFingerprint(input.packageRoot),
       readCliInstallStamp(cliInstallStampPath(env)),
       isFile(cliInstallUpdateMarkerPath(env)),
-      traceMachineStatus({ homeDir, env }),
       scanLegacySkills(homeDir),
       isFile(cliPath),
       isOwnedShim(shimPath),
@@ -151,7 +137,6 @@ export async function resolveCliInstallStatus(input: {
           : await isShellProfileConfigured(homeDir),
       onPath: pathContainsDirectory(env.PATH, path.dirname(shimPath)),
     },
-    trace,
     cli: cliBuilt
       ? {
           path: cliPath,
@@ -212,7 +197,6 @@ interface ApplyCliInstallInput {
   packageRoot: string;
   shim?: boolean;
   autoUpdate?: boolean;
-  trace?: true | TraceCredentialsInput;
   cliPath?: string;
   cliRuntimePath?: string;
   homeDir?: string;
@@ -222,8 +206,7 @@ interface ApplyCliInstallInput {
 export async function applyCliInstall(
   input: ApplyCliInstallInput,
 ): Promise<ApplyResult> {
-  if (!input.autoUpdate && input.shim !== true && input.trace === undefined)
-    return { code: 0, output: "" };
+  if (!input.autoUpdate && input.shim !== true) return { code: 0, output: "" };
 
   const homeDir = input.homeDir ?? os.homedir();
 
@@ -273,13 +256,13 @@ async function resyncCliInstallUnlocked(
   input: ApplyCliInstallInput,
 ): Promise<ApplyResult> {
   const env = input.env ?? process.env;
+  const chunks = await removeTraceHooks(input.homeDir ?? os.homedir(), env);
   const stamp = await readCliInstallStamp(cliInstallStampPath(env));
   const fingerprint = await installFingerprint(input.packageRoot);
 
   if (stamp?.consent !== "granted" || stamp.fingerprint === fingerprint)
-    return { code: 0, output: "" };
+    return { code: 0, output: chunks.join("") };
 
-  const chunks: string[] = [];
   let shimPath: string | undefined;
   let userPath = stamp.userPath;
 
@@ -313,32 +296,7 @@ async function applyCliInstallUnlocked(
   const env = input.env ?? process.env;
   const previous = await readCliInstallStamp(cliInstallStampPath(env));
   const granted = previous?.consent === "granted";
-  const chunks: string[] = [];
-  let traceEnabled = false;
-
-  // Configure the machine before any other mutation, so a request with
-  // missing credentials fails without a partial install.
-  if (input.trace !== undefined) {
-    try {
-      const status = await configureTraceMachine({
-        homeDir,
-        env,
-        credentials: input.trace === true ? undefined : input.trace,
-      });
-
-      traceEnabled = status.enabled;
-      chunks.push(`[ok] trace capture -> ${status.envPath}\n`);
-
-      if (status.error)
-        chunks.push(`Trace storage check failed: ${status.error}\n`);
-    } catch (cause) {
-      chunks.push(
-        `${cause instanceof Error ? cause.message : String(cause)}\n`,
-      );
-
-      return { code: 1, output: chunks.join("") };
-    }
-  }
+  const chunks = await removeTraceHooks(homeDir, env);
 
   let shimPath: string | undefined;
   let userPath: string | undefined;
@@ -351,17 +309,6 @@ async function applyCliInstallUnlocked(
     userPath = installed.userPath;
   }
 
-  if (traceEnabled) {
-    const executable = (await isOwnedShim(pathShimPath(homeDir)))
-      ? pathShimPath(homeDir)
-      : undefined;
-
-    const hooks = await installHarnessHooks({ homeDir, env, executable });
-
-    for (const hook of hooks.installed)
-      chunks.push(`[ok] ${hook.agent} trace hook -> ${hook.path}\n`);
-  }
-
   const stamp: ReviewCliInstallStamp = {
     consent: "granted",
     fingerprint: await installFingerprint(input.packageRoot),
@@ -371,9 +318,6 @@ async function applyCliInstallUnlocked(
   const stampShimPath = shimPath ?? (granted ? previous.shimPath : undefined);
 
   if (stampShimPath) stamp.shimPath = stampShimPath;
-
-  if (input.trace !== undefined || (granted && previous.traceManaged))
-    stamp.traceManaged = true;
 
   const stampUserPath =
     userPath ?? (granted && !shimPath ? previous.userPath : undefined);
@@ -552,9 +496,34 @@ async function writeUpdateMarker(env: NodeJS.ProcessEnv): Promise<void> {
   });
 }
 
+/**
+ * Removes the agent and Git hooks earlier builds installed for trace
+ * capture, which this build no longer has. Hooks that run another live
+ * installation's command stay. Returns a line per removal; none when nothing
+ * was installed.
+ */
+async function removeTraceHooks(
+  homeDir: string,
+  env: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  const ownCommand = (await isOwnedShim(pathShimPath(homeDir)))
+    ? pathShimPath(homeDir)
+    : "";
+
+  const removed = await removeLegacyTraceHooks({ homeDir, env, ownCommand });
+
+  return [
+    ...removed.hooks.map(
+      (agent) => `[ok] removed the old ${agent} trace hook\n`,
+    ),
+    ...removed.repositories.map(
+      (root) => `[ok] restored the Git hooks of ${root}\n`,
+    ),
+  ];
+}
+
 interface RemoveCliInstallInput {
   shim?: boolean;
-  trace?: boolean;
   homeDir?: string;
   env?: NodeJS.ProcessEnv;
 }
@@ -572,12 +541,7 @@ async function removeCliInstallUnlocked(
 ): Promise<{ output: string }> {
   const homeDir = input.homeDir ?? os.homedir();
   const env = input.env ?? process.env;
-  const chunks: string[] = [];
-
-  const expectedTraceCommand = (await isOwnedShim(pathShimPath(homeDir)))
-    ? pathShimPath(homeDir)
-    : "";
-
+  const chunks = await removeTraceHooks(homeDir, env);
   const previous = await readCliInstallStamp(cliInstallStampPath(env));
 
   if (input.shim) {
@@ -607,27 +571,6 @@ async function removeCliInstallUnlocked(
     }
   }
 
-  if (input.trace) {
-    const { kept } = await disableAllTraceRepositories(
-      traceScope({ homeDir, env }),
-      expectedTraceCommand,
-    );
-
-    for (const agent of AGENT_TRACE_HOOK_AGENTS)
-      await removeAgentTraceHook(agent, homeDir, env, expectedTraceCommand);
-
-    const remaining = await describeTraceHookOwners(homeDir, env);
-
-    if (kept.length || Object.values(remaining).some(Boolean)) {
-      chunks.push(
-        "[skip] kept trace capture for another Whiteboard installation\n",
-      );
-    } else {
-      await disableTraceMachine({ homeDir, env });
-      chunks.push("[ok] disabled Whiteboard trace capture\n");
-    }
-  }
-
   if (previous?.consent === "granted") {
     const stamp: ReviewCliInstallStamp = {
       consent: "granted",
@@ -637,8 +580,6 @@ async function removeCliInstallUnlocked(
     if (previous.fingerprint) stamp.fingerprint = previous.fingerprint;
 
     if (!input.shim && previous.shimPath) stamp.shimPath = previous.shimPath;
-
-    if (!input.trace && previous.traceManaged) stamp.traceManaged = true;
 
     if (!input.shim && previous.userPath) stamp.userPath = previous.userPath;
     await writeCurrentStamp(env, stamp);
@@ -844,22 +785,6 @@ export async function installReviewCommand(input: {
       homeDir,
     ),
   );
-
-  if (await traceMachineEnabled({ homeDir, env })) {
-    const scope = traceScope({ homeDir, env });
-
-    for (const cwd of await listTraceRepositoryRoots(homeDir)) {
-      if (!(await isDirectory(cwd))) continue;
-
-      if ((await traceRepositoryStatus(cwd)).enabled)
-        await enableTraceRepository({
-          cwd,
-          scope,
-          reviewCommand: shimPath,
-          replaceCommand: true,
-        });
-    }
-  }
 
   const legacyShim = path.join(path.dirname(shimPath), "review");
 

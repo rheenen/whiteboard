@@ -23,9 +23,6 @@
  */
 
 export const REVIEW_KEYMAP_SETTING = 'review.keymap';
-export const REVIEW_TELEMETRY_SETTING = 'review.telemetry.enabled';
-/** Unregistered: settings.json only. */
-export const REVIEW_SERVICE_URL_SETTING = 'review.serviceUrl';
 export const REVIEW_SOFTWARE_MAP_SETTING = 'review.experimental.softwareMap.enabled';
 /** Code OSS's own setting, registered in `update.config.contribution.ts`. */
 export const REVIEW_SHOW_RELEASE_NOTES_SETTING = 'update.showReleaseNotes';
@@ -61,7 +58,6 @@ export const reviewConfigurationDefaults = {
 	[REVIEW_SOFTWARE_MAP_SETTING]: false,
 	[REVIEW_REMOTE_HOSTS_SETTING]: [],
 	[REVIEW_REMOTE_INSTALL_SETTING]: 'ask',
-	[REVIEW_TELEMETRY_SETTING]: true,
 	'telemetry.telemetryLevel': 'off',
 	'telemetry.enableTelemetry': false,
 	'telemetry.enableCrashReporter': false,

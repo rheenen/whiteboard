@@ -13,18 +13,9 @@ import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 
 import { REVIEW_REMOTE_WRAPPER_MARK } from "@dev.fast/review-protocol";
-import {
-  StoreClient,
-  runTraceSessions as runTraceSessionsActual,
-} from "@dev.fast/trace-core";
 import { describe, expect, it, vi } from "vitest";
 
 import { runReviewCli } from "./cli-runner";
-import {
-  PostHogCaptureClient,
-  type PostHogCaptureInput,
-  type PostHogCaptureProperties,
-} from "./posthog-capture-client";
 import {
   ReviewAppStateError,
   ReviewAppUsageError,
@@ -32,11 +23,6 @@ import {
 } from "./review-app";
 import { runReviewAppLaunch as runReviewAppLaunchActual } from "./review-app-launcher";
 import { runReviewInfo as runReviewInfoActual } from "./review-info";
-import {
-  type ReviewCommandTelemetry,
-  ReviewTelemetry,
-} from "./review-telemetry";
-import { runTraceStatus as runTraceStatusActual } from "./trace-cli";
 
 describe("Whiteboard CLI", () => {
   it("routes Cursor install instructions without connecting to Desktop", async () => {
@@ -202,34 +188,23 @@ describe("Whiteboard CLI", () => {
     );
   });
 
-  it("routes own-upload status filters without requesting trace content", async () => {
-    const runTraceStatus = vi.fn<typeof runTraceStatusActual>(async () => 0);
+  it.each([
+    ["trace", "hook", "SessionStart"],
+    ["trace", "hook", "Stop", "--unknown"],
+    ["trace", "git-hook", "pre-push", "origin", "git@example.com:a/b.git"],
+  ])(
+    "lets hooks from builds with trace capture succeed silently: %j",
+    async (...argv) => {
+      let output = "";
+      const stdout = outputStream();
+      const stderr = outputStream();
+      stdout.on("data", (chunk) => (output += String(chunk)));
+      stderr.on("data", (chunk) => (output += String(chunk)));
 
-    const code = await runReviewCli({
-      argv: [
-        "trace",
-        "status",
-        "--agent-session",
-        "my-upload-session",
-        "--limit",
-        "5",
-        "--cursor",
-        "cursor-value",
-      ],
-      stdout: outputStream(),
-      stderr: outputStream(),
-      runtime: { runTraceStatus },
-    });
-
-    expect(code).toBe(0);
-    expect(runTraceStatus).toHaveBeenCalledWith(
-      expect.objectContaining({
-        session: "my-upload-session",
-        limit: 5,
-        cursor: "cursor-value",
-      }),
-    );
-  });
+      await expect(runReviewCli({ argv, stdout, stderr })).resolves.toBe(0);
+      expect(output).toBe("");
+    },
+  );
 
   it("prints the package version", async () => {
     const stdout = outputStream();
@@ -336,420 +311,6 @@ describe("Whiteboard CLI", () => {
     );
   });
 
-  it.each([
-    ["app launch", ["app", "launch"], "app.launch"],
-    ["bare app", ["app"], "app.launch"],
-    ["app pick", ["app", "pick", "--session", "review-uuid"], "app.pick"],
-  ])("tracks %s as %s", async (_label, argv, command) => {
-    const captureCommandSucceeded = vi.fn<() => Promise<undefined>>(
-      async () => undefined,
-    );
-
-    const telemetry = {
-      setSurface: vi.fn<ReviewTelemetry["setSurface"]>(),
-      setDesktopVersion: vi.fn<ReviewTelemetry["setDesktopVersion"]>(),
-      createCommandRunId: vi.fn<ReviewTelemetry["createCommandRunId"]>(
-        () => "run-12345678",
-      ),
-      captureInstallationCreated: vi.fn<() => Promise<undefined>>(
-        async () => undefined,
-      ),
-      captureCommandStarted: vi.fn<() => Promise<undefined>>(
-        async () => undefined,
-      ),
-      captureCommandSucceeded,
-      captureCommandFailed: vi.fn<() => Promise<undefined>>(
-        async () => undefined,
-      ),
-      captureUiEvent: vi.fn<ReviewTelemetry["captureUiEvent"]>(
-        async () => undefined,
-      ),
-      captureToolCalled: vi.fn<ReviewTelemetry["captureToolCalled"]>(
-        async () => undefined,
-      ),
-      captureAccountAlias: vi.fn<ReviewTelemetry["captureAccountAlias"]>(
-        async () => undefined,
-      ),
-      shutdown: vi.fn<() => Promise<undefined>>(async () => undefined),
-    } satisfies ReviewCommandTelemetry;
-
-    await expect(
-      runReviewCli({
-        argv,
-        stdout: outputStream(),
-        stderr: outputStream(),
-        telemetry,
-        runtime: {
-          runReviewAppLaunch: async () => ({
-            event: "app",
-            action: "launch",
-            state: "running",
-            instanceId: "desktop-1",
-          }),
-          runReviewAppPick: async () => ({
-            event: "app",
-            action: "pick",
-            reviewUuid: "review-uuid",
-            title: "Review",
-          }),
-        },
-      }),
-    ).resolves.toBe(0);
-    expect(captureCommandSucceeded).toHaveBeenCalledWith(
-      expect.objectContaining({ command }),
-    );
-  });
-
-  it.each([
-    [new ReviewAppUsageError("terminal required"), "usage_error", "user_input"],
-    [new ReviewAppStateError("no review"), "review_state_error", "local_state"],
-  ])(
-    "classifies app pick failure %s",
-    async (cause, errorName, errorCategory) => {
-      const rootPath = await mkdtemp(
-        path.join(os.tmpdir(), "review-cli-app-pick-error-"),
-      );
-
-      const events: PostHogCaptureInput[] = [];
-
-      const telemetry = new ReviewTelemetry({
-        captureClient: {
-          enabled: true,
-          capture: async (event) => {
-            events.push(event);
-          },
-        },
-        env: {},
-        installConfigPath: path.join(rootPath, "telemetry.json"),
-        legacyInstallConfigPath: path.join(rootPath, "legacy.json"),
-      });
-
-      try {
-        await expect(
-          runReviewCli({
-            argv: ["app", "pick", "--session", "review-uuid"],
-            stdout: outputStream(),
-            stderr: outputStream(),
-            telemetry,
-            runtime: {
-              runReviewAppPick: async () => {
-                throw cause;
-              },
-            },
-          }),
-        ).resolves.toBe(1);
-
-        expect(events).toContainEqual(
-          expect.objectContaining({
-            event: "review_command_failed",
-            properties: expect.objectContaining({
-              command_path: "app.pick",
-              error_name: errorName,
-              error_category: errorCategory,
-            }),
-          }),
-        );
-      } finally {
-        await rm(rootPath, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it("labels every event of a headless server process headless", async () => {
-    const rootPath = await mkdtemp(
-      path.join(os.tmpdir(), "review-cli-surface-"),
-    );
-
-    const events: PostHogCaptureInput[] = [];
-
-    const telemetry = new ReviewTelemetry({
-      captureClient: {
-        enabled: true,
-        capture: async (event) => {
-          events.push(event);
-        },
-      },
-      env: {},
-      installConfigPath: path.join(rootPath, "telemetry.json"),
-      legacyInstallConfigPath: path.join(rootPath, "legacy.json"),
-    });
-
-    try {
-      await expect(
-        runReviewCli({
-          argv: ["server", "start", "--port", "99999"],
-          stdout: outputStream(),
-          stderr: outputStream(),
-          telemetry,
-        }),
-      ).resolves.toBe(1);
-
-      expect(events.map((event) => event.event)).toContain(
-        "review_installation_created",
-      );
-      expect(new Set(events.map((event) => event.properties?.surface))).toEqual(
-        new Set(["headless"]),
-      );
-    } finally {
-      await rm(rootPath, { recursive: true, force: true });
-    }
-  });
-
-  it("classifies invalid headless options as usage failures", async () => {
-    const rootPath = await mkdtemp(
-      path.join(os.tmpdir(), "review-cli-invalid-port-"),
-    );
-
-    const events: PostHogCaptureInput[] = [];
-
-    const telemetry = new ReviewTelemetry({
-      captureClient: {
-        enabled: true,
-        capture: async (event) => {
-          events.push(event);
-        },
-      },
-      env: {},
-      installConfigPath: path.join(rootPath, "telemetry.json"),
-      legacyInstallConfigPath: path.join(rootPath, "legacy.json"),
-    });
-
-    try {
-      await expect(
-        runReviewCli({
-          argv: ["server", "start", "--port", "99999"],
-          stdout: outputStream(),
-          stderr: outputStream(),
-          telemetry,
-        }),
-      ).resolves.toBe(1);
-
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          event: "review_command_failed",
-          properties: expect.objectContaining({
-            command_path: "server.start",
-            error_name: "usage_error",
-            error_category: "user_input",
-          }),
-        }),
-      );
-    } finally {
-      await rm(rootPath, { recursive: true, force: true });
-    }
-  });
-
-  it("classifies API connection failures as Desktop dependency failures", async () => {
-    const rootPath = await mkdtemp(
-      path.join(os.tmpdir(), "review-cli-api-connection-"),
-    );
-
-    const events: PostHogCaptureInput[] = [];
-
-    const telemetry = new ReviewTelemetry({
-      captureClient: {
-        enabled: true,
-        capture: async (event) => {
-          events.push(event);
-        },
-      },
-      env: {},
-      installConfigPath: path.join(rootPath, "telemetry.json"),
-      legacyInstallConfigPath: path.join(rootPath, "legacy.json"),
-    });
-
-    try {
-      await expect(
-        runReviewCli({
-          argv: ["api", "tools"],
-          // Installed but not running; otherwise Linux starts a headless server.
-          env: {
-            DEV_REVIEW_HOME: rootPath,
-            DEV_FAST_REVIEW_DESKTOP_COMMAND: "true",
-          },
-          stdout: outputStream(),
-          stderr: outputStream(),
-          telemetry,
-        }),
-      ).resolves.toBe(1);
-
-      expect(events).toContainEqual(
-        expect.objectContaining({
-          event: "review_command_failed",
-          properties: expect.objectContaining({
-            command_path: "api",
-            error_name: "desktop_connection_error",
-            error_category: "dependency",
-          }),
-        }),
-      );
-    } finally {
-      await rm(rootPath, { recursive: true, force: true });
-    }
-  });
-
-  it("persists command start before an unresolved handler and completes the same run", async () => {
-    const rootPath = await mkdtemp(path.join(os.tmpdir(), "review-cli-run-"));
-
-    const queueDir = path.join(rootPath, "queue");
-    let queueId = 0;
-
-    const fetchMock = vi.fn<typeof fetch>(
-      async () => new Response(null, { status: 200 }),
-    );
-
-    const captureClient = new PostHogCaptureClient({
-      apiKey: "test-key",
-      fetch: fetchMock,
-      queueDir,
-      idFactory: () => `queue-${queueId++}`,
-    });
-
-    const telemetry = new ReviewTelemetry({
-      captureClient,
-      env: {},
-      installConfigPath: path.join(rootPath, "telemetry.json"),
-      idFactory: () => "install-123",
-      randomUUID: () => "8b733d48-1172-46a7-9df0-3cc71930c25a",
-    });
-
-    let entered!: () => void;
-    const handlerEntered = new Promise<void>((resolve) => (entered = resolve));
-
-    let release!: (
-      value: Awaited<ReturnType<typeof runReviewInfoActual>>,
-    ) => void;
-
-    const handlerResult = new Promise<
-      Awaited<ReturnType<typeof runReviewInfoActual>>
-    >((resolve) => (release = resolve));
-
-    const runReviewInfo = vi.fn<typeof runReviewInfoActual>(async () => {
-      entered();
-
-      return handlerResult;
-    });
-
-    try {
-      const running = runReviewCli({
-        argv: ["info"],
-        stdout: outputStream(),
-        stderr: outputStream(),
-        telemetry,
-        runtime: { runReviewInfo },
-      });
-
-      await handlerEntered;
-
-      const queued = await Promise.all(
-        (await readdir(queueDir))
-          .filter((file) => file.endsWith(".json"))
-          .map(async (file) =>
-            JSON.parse(await readFile(path.join(queueDir, file), "utf8")),
-          ),
-      );
-
-      expect(queued).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            event: "review_command_started",
-            properties: expect.objectContaining({
-              command_path: "info",
-              command_run_id: "8b733d48-1172-46a7-9df0-3cc71930c25a",
-            }),
-          }),
-        ]),
-      );
-
-      release({ event: "info", reviews: [] });
-      await expect(running).resolves.toBe(0);
-
-      const sent = fetchMock.mock.calls.flatMap(
-        ([, init]) =>
-          JSON.parse(String(init?.body)).batch as Array<{
-            event: string;
-            properties: PostHogCaptureProperties;
-          }>,
-      );
-
-      const lifecycle = sent.filter((event) =>
-        ["review_command_started", "review_command_succeeded"].includes(
-          event.event,
-        ),
-      );
-
-      expect(lifecycle).toHaveLength(2);
-      expect(lifecycle.map((event) => event.properties.command_run_id)).toEqual(
-        [
-          "8b733d48-1172-46a7-9df0-3cc71930c25a",
-          "8b733d48-1172-46a7-9df0-3cc71930c25a",
-        ],
-      );
-    } finally {
-      await rm(rootPath, { recursive: true, force: true });
-    }
-  });
-
-  it("emits a failed terminal event when a handler rejects", async () => {
-    const captureCommandStarted = vi.fn<
-      ReviewTelemetry["captureCommandStarted"]
-    >(async () => undefined);
-
-    const captureCommandFailed = vi.fn<ReviewTelemetry["captureCommandFailed"]>(
-      async () => undefined,
-    );
-
-    const telemetry = {
-      setSurface: vi.fn<ReviewTelemetry["setSurface"]>(),
-      setDesktopVersion: vi.fn<ReviewTelemetry["setDesktopVersion"]>(),
-      createCommandRunId: () => "8b733d48-1172-46a7-9df0-3cc71930c25a",
-      captureInstallationCreated: vi.fn<
-        ReviewTelemetry["captureInstallationCreated"]
-      >(async () => undefined),
-      captureCommandStarted,
-      captureCommandSucceeded: vi.fn<
-        ReviewTelemetry["captureCommandSucceeded"]
-      >(async () => undefined),
-      captureCommandFailed,
-      captureUiEvent: vi.fn<ReviewTelemetry["captureUiEvent"]>(
-        async () => undefined,
-      ),
-      captureToolCalled: vi.fn<ReviewTelemetry["captureToolCalled"]>(
-        async () => undefined,
-      ),
-      captureAccountAlias: vi.fn<ReviewTelemetry["captureAccountAlias"]>(
-        async () => undefined,
-      ),
-      shutdown: vi.fn<ReviewTelemetry["shutdown"]>(async () => undefined),
-    } satisfies ReviewCommandTelemetry;
-
-    await expect(
-      runReviewCli({
-        argv: ["info"],
-        stdout: outputStream(),
-        stderr: outputStream(),
-        telemetry,
-        runtime: {
-          runReviewInfo: async () => {
-            throw new Error("controlled failure");
-          },
-        },
-      }),
-    ).resolves.toBe(1);
-
-    expect(captureCommandStarted).toHaveBeenCalledWith({
-      command: "info",
-      commandRunId: "8b733d48-1172-46a7-9df0-3cc71930c25a",
-    });
-    expect(captureCommandFailed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        command: "info",
-        commandRunId: "8b733d48-1172-46a7-9df0-3cc71930c25a",
-        exitCode: 1,
-      }),
-    );
-  });
-
   it("supports the app pick subcommand", async () => {
     const argv = ["app", "pick", "--session", "review-uuid"];
 
@@ -790,37 +351,6 @@ describe("Whiteboard CLI", () => {
         stderr: outputStream(),
       }),
     ).resolves.toBe(1);
-  });
-
-  it("rejects a --limit that is not a whole number before the runtime runs", async () => {
-    const runTraceSessions = vi.fn<typeof runTraceSessionsActual>(
-      async () => 0,
-    );
-
-    for (const value of ["50junk", "1.5", "-1", ""]) {
-      const stderr = outputStream();
-      await expect(
-        runReviewCli({
-          argv: ["trace", "sessions", "--limit", value],
-          stdout: outputStream(),
-          stderr,
-          runtime: { runTraceSessions },
-        }),
-      ).resolves.toBe(1);
-      expect(runTraceSessions).not.toHaveBeenCalled();
-    }
-
-    await expect(
-      runReviewCli({
-        argv: ["trace", "sessions", "--limit", "50"],
-        stdout: outputStream(),
-        stderr: outputStream(),
-        runtime: { runTraceSessions },
-      }),
-    ).resolves.toBe(0);
-    expect(runTraceSessions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-    );
   });
 
   it.each([
@@ -940,7 +470,6 @@ async function runConnect(
       cwd: homeDir,
       env: {
         HOME: homeDir,
-        TRACE_HOME_DIR: homeDir,
         DEV_REVIEW_HOME: path.join(homeDir, ".dev"),
         ...extra?.env?.(homeDir),
       },
@@ -955,56 +484,3 @@ async function runConnect(
     await rm(homeDir, { recursive: true, force: true });
   }
 }
-
-it("emits one JSON error when a trace command needs repository authorization", async () => {
-  const stdout = outputStream();
-  let output = "";
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const client = new StoreClient({
-    origin: "https://app.dev.fast",
-    token: "identity",
-    fetch: async () =>
-      Response.json(
-        {
-          error: {
-            code: "repository_authorization_required",
-            message: "Run whiteboard login --traces.",
-          },
-        },
-        { status: 403 },
-      ),
-  });
-
-  const code = await runReviewCli({
-    argv: ["--json", "trace", "status"],
-    stdout,
-    stderr: outputStream(),
-    runtime: {
-      runTraceStatus: async () => {
-        await client.findStore({ owner: "fixture", name: "repo" });
-
-        return 0;
-      },
-    },
-  });
-
-  expect(code).toBe(1);
-
-  const events = output
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    event: "error",
-    error: {
-      message: "Run whiteboard login --traces.",
-      code: "repository_authorization_required",
-      remedy: "whiteboard login --traces",
-    },
-  });
-});

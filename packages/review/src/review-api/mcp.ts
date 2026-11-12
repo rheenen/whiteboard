@@ -4,8 +4,6 @@ import { type JsonValue, isJsonObject } from "@dev.fast/json";
 import { ReviewInputError } from "@dev.fast/whiteboard-document";
 import { type CallToolResult, Server } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import type { ReviewToolCall } from "@review/review-telemetry.js";
-import type { ReviewSessionAgent } from "@review/ui-telemetry-events.js";
 
 import {
   type AuthoringTool,
@@ -16,47 +14,33 @@ import {
 import { authoringTools } from "./authoring-tools.js";
 import type { ReviewApiClient } from "./client.js";
 import { ReviewApiError } from "./client.js";
-import { mcpClientAgent } from "./mcp-client-agent.js";
 import { callPublicTool, publicTool, renderedImage } from "./public-tools.js";
 import { RECOVERY } from "./recovery.js";
 import { REVIEW_STATUS_TOOL } from "./status-tool.js";
-import { type ToolFailure, toolFailure } from "./tool-failure.js";
 
 // Some hosts ignore tools/list_changed, so the agent itself has to reload.
 const RELOAD_TOOLS =
   "Whiteboard is running now, but this session listed Whiteboard's tools before it started, so you may see only session_get_instructions. Before authoring, reload the `whiteboard` MCP server's tools (reconnect it in your agent, or start a new agent session). If you can already see tools such as session_create, carry on.";
 
-function mcpAuthoringGuidance(context: { traceEnabled: boolean }): string {
+function mcpAuthoringGuidance(): string {
   return [
     "Whiteboard explains code in documents the user reads in Whiteboard Desktop. Call session_get_instructions before creating or editing a Whiteboard and follow it. Read session_capabilities before authoring; session_create opens the new review in Desktop when it is available, so call session_open only for an existing review, and generate software maps only when softwareMapEnabled is true. When the user asks for a Whiteboard or to use Whiteboard (for example to plan work, review a branch or PR stack, or explain a system in Whiteboard), author a Whiteboard with the default topic.",
-    ...(context.traceEnabled
-      ? [
-          'For why code exists, what an agent was thinking, or whether an agent solved something before, call session_get_instructions({topic:"trace-archaeology"}).',
-        ]
-      : []),
     "For programmatic MCP calls, use structuredContent when present; otherwise parse JSON from the text content when the result is JSON. An insert through session_edit uses edit.content for the actual document component, never the MCP transport wrapper containing content or structuredContent.",
     "Never read or write Whiteboard's own files or SQL, except a draft folder a Whiteboard tool hands you to edit.",
   ].join(" ");
 }
 
 export async function serveReviewMcp(
-  /** Connects to `key` once one is latched, else selects one, as `agentKind`. */
-  connect: (
-    key?: string,
-    agentKind?: ReviewSessionAgent,
-  ) => Promise<ConnectedReview>,
+  /** Connects to `key` once one is latched, else selects one. */
+  connect: (key?: string) => Promise<ConnectedReview>,
   stdin: Readable,
   stdout: Writable,
   stderr: Writable = process.stderr,
-  traceEnabled = false,
   /** What whiteboard_status reports when the Desktop cannot be reached, and why. */
   offlineStatus?: (problem: string) => Promise<JsonValue>,
-  onToolCall?: (call: ReviewToolCall) => Promise<void> | void,
-  /** The agent from the session environment, when the handshake names none. */
-  environmentAgent?: ReviewSessionAgent,
 ) {
   const instructionsTool = {
-    ...authoringTools(traceEnabled).find(
+    ...authoringTools().find(
       (tool) => tool.name === "review_get_instructions",
     )!,
     name: "session_get_instructions",
@@ -79,11 +63,8 @@ export async function serveReviewMcp(
   // it never hops to another key once others start.
   let latched: string | undefined;
 
-  const agentKind = () =>
-    mcpClientAgent(server.getClientVersion()?.name) ?? environmentAgent;
-
   const load = async (signal?: AbortSignal) => {
-    const { client, instance } = await connect(latched, agentKind());
+    const { client, instance } = await connect(latched);
     latched ??= instance?.key;
 
     catalog = (await client.read<AuthoringTool[]>("/authoring", signal)).map(
@@ -125,7 +106,7 @@ export async function serveReviewMcp(
           // guidance on the discovery tool instead, including before Desktop starts.
           description:
             name === instructionsTool.name
-              ? `${mcpAuthoringGuidance({ traceEnabled })}\n\n${description}`
+              ? `${mcpAuthoringGuidance()}\n\n${description}`
               : description,
           inputSchema,
           // GET routes only read.
@@ -135,22 +116,6 @@ export async function serveReviewMcp(
     };
   });
   server.setRequestHandler("tools/call", async (request, ctx) => {
-    const startedAt = Date.now();
-    // The requested name is agent input; only a catalog name is reported.
-    let tool: AuthoringTool | undefined;
-
-    let phase: "connect" | "call" = "connect";
-
-    const report = (failure?: ToolFailure) =>
-      void onToolCall?.({
-        tool: tool?.name ?? "other",
-        via: "mcp",
-        ok: !failure,
-        durationMs: Date.now() - startedAt,
-        agentKind: agentKind(),
-        ...failure,
-      });
-
     try {
       let client: ReviewApiClient;
       let tools: AuthoringTool[];
@@ -183,8 +148,7 @@ export async function serveReviewMcp(
         throw error;
       }
 
-      phase = "call";
-      tool = tools.find((tool) => tool.name === request.params.name);
+      const tool = tools.find((tool) => tool.name === request.params.name);
 
       if (!tool)
         throw new ReviewInputError(
@@ -202,7 +166,6 @@ export async function serveReviewMcp(
       );
 
       const text = toolResultText(tool, result);
-      report();
 
       const response: CallToolResult = {
         content: [
@@ -223,8 +186,6 @@ export async function serveReviewMcp(
 
       return response;
     } catch (error) {
-      report(toolFailure(error, phase));
-
       return {
         isError: true,
         content: [

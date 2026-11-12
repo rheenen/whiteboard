@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,12 +13,13 @@ import { openLocalReviewStore } from "@review/review-api/local-data.js";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { exportShare } from "./export.js";
-import { importShare, shareKey, validateShareBundle } from "./import.js";
-import { fetchPinnedRepository } from "./repository.js";
+import { importShare, validateShareBundle } from "./import.js";
+import { sharedProtocols } from "./repository.js";
+
+// The fixtures fetch from local paths.
+sharedProtocols.add("file");
 
 const cleanup: Array<() => Promise<void>> = [];
-
-const capability = () => randomBytes(32).toString("base64url");
 
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -73,20 +74,6 @@ async function fixture() {
     },
   });
 
-  const traceId = randomUUID();
-  await local.data.upload({
-    kind: "trace",
-    id: traceId,
-    repositoryId: repository.id,
-    trace: {
-      label: "Retained conversation",
-      events: [
-        { id: "one", role: "user", text: "Change the answer." },
-        { id: "two", role: "assistant", text: "Changed it to two." },
-      ],
-    },
-  });
-
   for (const content of [
     {
       type: "code_peek",
@@ -105,12 +92,6 @@ async function fixture() {
         fromLine: 1,
         toLine: 1,
       }),
-    },
-    {
-      type: "trace_quote",
-      traceId,
-      eventId: "one",
-      text: "Change the answer.",
     },
   ])
     await local.store.execute({
@@ -164,19 +145,16 @@ async function importFixture(
   cleanup.push(() => recipient.data.close());
   vi.stubEnv("DEV_REVIEW_HOME", root);
 
-  const fetchRepository = vi.fn<typeof fetchPinnedRepository>(
-    (target, _url, ...rest) => fetchPinnedRepository(target, repo, ...rest),
-  );
+  // The recipient's own clone, which holds every pinned commit.
+  const checkout = path.join(root, "recipient-checkout");
+  execFileSync("git", ["clone", "-q", repo, checkout]);
+  await recipient.data.register(checkout);
 
-  const id = await importShare(
-    { ...recipient, fetchRepository },
-    shareKey("https://app.dev.fast", capability()),
-    bundle,
-  );
+  const id = await importShare(recipient, randomUUID(), bundle);
 
   const app = createReviewApi(recipient.store, recipient.data);
 
-  return { ...fixtureData, bundle, recipient, id, app, fetchRepository };
+  return { ...fixtureData, bundle, recipient, id, app };
 }
 
 /** Stand in for a bundle shared by an older Review: its sealed snapshot
@@ -206,23 +184,23 @@ it("exports a review saved with the retired section status and imports a bundle 
 
       const db = new DatabaseSync(path.join(root, "review.db"));
       db.prepare(
-        `UPDATE versions SET snapshot=json_set(snapshot,'$.document[3].status','in_progress') WHERE review_id=? AND version=?`,
+        `UPDATE versions SET snapshot=json_set(snapshot,'$.document[2].status','in_progress') WHERE review_id=? AND version=?`,
       ).run(reviewId, version);
       db.close();
 
       const exported = await exportShare({ ...local, reviewId, repository });
       const { snapshot } = validateShareBundle(exported);
-      expect(snapshot.document[3]).toMatchObject({ title: "Notes" });
-      expect(snapshot.document[3]).not.toHaveProperty("status");
+      expect(snapshot.document[2]).toMatchObject({ title: "Notes" });
+      expect(snapshot.document[2]).not.toHaveProperty("status");
 
       return withLegacySectionStatus(exported);
     },
   );
 
-  expect((bundle.snapshot.document as JsonObject[])[3]).toMatchObject({
+  expect((bundle.snapshot.document as JsonObject[])[2]).toMatchObject({
     status: "complete",
   });
-  const shared = recipient.store.read(id).document[3];
+  const shared = recipient.store.read(id).document[2];
   expect(shared).toMatchObject({ type: "section", title: "Notes" });
   expect(shared).not.toHaveProperty("status");
 });
@@ -286,7 +264,7 @@ it("shares a review's lenses and reads a bundle that holds them as document bloc
   expect(JSON.stringify(shared.document)).not.toContain("file_lens");
 });
 
-it("fetches pinned source into an independent repository and retains complete traces offline", async () => {
+it("reads pinned source from the recipient's checkout once the sender's is gone", async () => {
   const { id, repo, app, recipient } = await importFixture();
   expect(recipient.store.read(id).origin?.branch).toBe("feature/shared-head");
   await rename(repo, repo + "-hidden");
@@ -309,25 +287,13 @@ it("fetches pinned source into an independent repository and retains complete tr
       expect.objectContaining({ path: "renamed.ts", status: "renamed" }),
     ]),
   );
-
-  const quote = recipient.store
-    .read(id)
-    .document.find((block) => block.type === "trace_quote");
-
-  const trace = await (
-    await app.request(
-      `/${id}/resources/${quote?.type === "trace_quote" && quote.traceId}`,
-    )
-  ).json();
-
-  expect(trace.events).toHaveLength(2);
 });
 
 it("rejects an invalid bundle", async () => {
   const { bundle, recipient } = await importFixture();
 
   await expect(
-    importShare(recipient, shareKey("https://app.dev.fast", capability()), {
+    importShare(recipient, randomUUID(), {
       ...bundle,
       snapshot: {},
     }),
@@ -423,35 +389,43 @@ it("shares a plan whose links quote commits, and fetches them for its recipient"
 
   vi.stubEnv("DEV_REVIEW_HOME", root);
 
-  // The recipient's clone has the default branch only.
-  const id = await importShare(
-    {
-      ...recipient,
-      cloneRepository: async (clone) => {
-        await mkdir(clone, { recursive: true });
-        execFileSync("git", ["init", "-q", clone]);
-        execFileSync("git", ["-C", clone, "remote", "add", "origin", repo]);
-        execFileSync("git", [
-          "-C",
-          clone,
-          "fetch",
-          "-q",
-          "origin",
-          "feature/shared-head",
-        ]);
-        execFileSync("git", [
-          "-C",
-          clone,
-          "checkout",
-          "-q",
-          "--detach",
-          "FETCH_HEAD",
-        ]);
-      },
-    },
-    shareKey("https://app.dev.fast", capability()),
-    bundle,
+  // The recipient's checkout has the default branch only; Git reaches
+  // "GitHub" through the sender's repository.
+  const clone = path.join(root, "recipient-checkout");
+  vi.stubEnv("HOME", root);
+  await writeFile(
+    path.join(root, ".gitconfig"),
+    `[url "${repo}"]\n\tinsteadOf = ${repository.cloneUrl}\n`,
   );
+  await mkdir(clone);
+  execFileSync("git", ["init", "-q", clone]);
+  execFileSync("git", [
+    "-C",
+    clone,
+    "remote",
+    "add",
+    "origin",
+    repository.cloneUrl,
+  ]);
+  execFileSync("git", [
+    "-C",
+    clone,
+    "fetch",
+    "-q",
+    "origin",
+    "feature/shared-head",
+  ]);
+  execFileSync("git", [
+    "-C",
+    clone,
+    "checkout",
+    "-q",
+    "--detach",
+    "FETCH_HEAD",
+  ]);
+  await recipient.data.register(clone);
+
+  const id = await importShare(recipient, randomUUID(), bundle);
 
   const { target } = recipient.store.read(id);
 
@@ -530,11 +504,7 @@ it("shares a clean worktree board at HEAD and freezes uncommitted lines", async 
   const recipient = openLocalReviewStore(path.join(root, "recipient.db"));
   cleanup.push(() => recipient.store.close());
   cleanup.push(() => recipient.data.close());
-  await expect(
-    importShare(
-      recipient,
-      shareKey("https://app.dev.fast", capability()),
-      frozen,
-    ),
-  ).rejects.toThrow("read-only snapshot");
+  await expect(importShare(recipient, randomUUID(), frozen)).rejects.toThrow(
+    "read-only snapshot",
+  );
 });

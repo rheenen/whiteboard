@@ -23,8 +23,6 @@ function server(
     const url = new URL(String(input));
     const route = `${init?.method ?? "GET"} ${url.pathname}`;
 
-    if (route === "POST /telemetry/event") return Response.json({ ok: true });
-
     requests.push(route);
 
     if (route === "GET /install/agents")
@@ -64,13 +62,6 @@ function setupActions(cliInstalled = true): ReviewCanvasSetupActions {
       installed: cliInstalled,
       profileConfigured: true,
       onPath: true,
-    },
-    trace: {
-      enabled: false,
-      configured: false,
-      autoActivateRepositories: false,
-      envPath: "/tmp/env",
-      settingsPath: "/tmp/settings",
     },
     cli: { path: "/tmp/cli.js", version: "0.0.1" },
     connect: {
