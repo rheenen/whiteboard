@@ -43,7 +43,13 @@ import {
 } from "./package-paths";
 import { isRetiredTraceHook } from "./retired-trace-hooks";
 import { reviewAgentCliHelp } from "./review-api/agent-cli";
-import { type ReviewAppEvent, runReviewAppPick } from "./review-app";
+import {
+  type ReviewAppEvent,
+  ReviewAppImportError,
+  type ReviewAppImportEvent,
+  runReviewAppImport,
+  runReviewAppPick,
+} from "./review-app";
 import {
   type ReviewAppLaunchEvent,
   runReviewAppLaunch,
@@ -72,6 +78,7 @@ class ReviewCliUsageError extends Error {
 interface ReviewCliRuntime {
   runReviewAppLaunch: typeof runReviewAppLaunch;
   runReviewAppPick: typeof runReviewAppPick;
+  runReviewAppImport: typeof runReviewAppImport;
   runReviewInfo: typeof runReviewInfo;
 }
 
@@ -722,7 +729,7 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
   });
 
   const writeAppEvent = (
-    event: ReviewAppLaunchEvent | ReviewAppEvent,
+    event: ReviewAppLaunchEvent | ReviewAppEvent | ReviewAppImportEvent,
     options: { json?: boolean; focus?: boolean },
   ) => {
     if (options.json) {
@@ -814,6 +821,53 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       .option("--focus", "bring Whiteboard Desktop to the foreground"),
     "plain",
   ).action(pickReview);
+
+  configureJsonOutput(
+    app
+      .command("import")
+      .description("Import a Whiteboard file")
+      .argument("<file>")
+      .option("--repo <path>")
+      .option("--read-only")
+      .option("--focus")
+      .option("--timeout <seconds>"),
+    "plain",
+  ).action(
+    async (
+      file: string,
+      options: {
+        repo?: string;
+        readOnly?: boolean;
+        focus?: boolean;
+        timeout?: string;
+        json?: boolean;
+      },
+    ) => {
+      const seconds =
+        options.timeout === undefined ? 120 : Number(options.timeout);
+
+      if (
+        !Number.isFinite(seconds) ||
+        seconds <= 0 ||
+        seconds * 1000 > 2147483647
+      )
+        throw new ReviewCliUsageError(
+          "--timeout must be a positive number of seconds.",
+        );
+
+      const event = await runtime.runReviewAppImport({
+        cwd,
+        file,
+        repo: options.repo,
+        readOnly: options.readOnly,
+        focus: options.focus,
+        timeoutMs: Math.ceil(seconds * 1000),
+      });
+
+      writeAppEvent(event, options);
+      state.exitCode = 0;
+    },
+  );
 
   const instanceOutput = (command: Command) => ({
     env,
@@ -1165,10 +1219,16 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     }
 
     if (state.json) {
-      emitReviewEvent(input.stdout, {
-        event: "error",
-        error: serializeReviewError(error),
-      });
+      if (error instanceof ReviewAppImportError) {
+        input.stdout.write(
+          `${JSON.stringify({ event: "error", error: { name: error.name, message: error.message, code: error.code, ...(error.remote && { remote: error.remote }), ...(error.reviewUuid && { reviewUuid: error.reviewUuid }) } })}\n`,
+        );
+      } else {
+        emitReviewEvent(input.stdout, {
+          event: "error",
+          error: serializeReviewError(error),
+        });
+      }
     } else {
       input.stderr.write(ensureTrailingNewline(formatCliError(error)));
     }
@@ -1213,6 +1273,7 @@ function reviewCliRuntime(
   return {
     runReviewAppLaunch,
     runReviewAppPick,
+    runReviewAppImport,
     runReviewInfo,
     ...overrides,
   };

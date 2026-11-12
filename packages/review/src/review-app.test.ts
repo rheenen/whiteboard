@@ -1,8 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ReviewDesktopProtocolMismatchError } from "./desktop-discovery";
-import { runReviewAppPick } from "./review-app";
-import { selectingDesktop } from "./review-test-utils";
+import { runReviewAppImport, runReviewAppPick } from "./review-app";
+import {
+  cleanupTempDirs,
+  selectingDesktop,
+  tempDir,
+} from "./review-test-utils";
 
 const input = {
   cwd: "/repo",
@@ -245,3 +253,405 @@ function healthyResponse(): Response {
     desktopAttached: true,
   });
 }
+
+describe("app import", () => {
+  afterEach(cleanupTempDirs);
+
+  async function fixture() {
+    const dir = await tempDir("review-app-import-");
+    execFileSync("git", ["init", "-q", dir]);
+    execFileSync("git", [
+      "-C",
+      dir,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/example/repo.git",
+    ]);
+    const file = path.join(dir, "board.whiteboard");
+
+    const bundle = {
+      format: "review-share/2",
+      reviewId: "source",
+      version: 1,
+      title: "Board",
+      snapshot: {
+        reviewId: "source",
+        version: 1,
+        title: "Board",
+        document: [],
+        createdAt: "2026-01-01",
+      },
+      images: {},
+      traces: {},
+      maps: {},
+      commits: [],
+      selections: {},
+      sources: [],
+      repository: { cloneUrl: "https://github.com/example/repo.git" },
+    };
+
+    await writeFile(file, JSON.stringify(bundle));
+
+    return { dir, file, bundle, writeFile };
+  }
+
+  it("imports and opens a board in order", async () => {
+    const { dir, file } = await fixture();
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (String(url).endsWith("/sharing/import"))
+        return Response.json({ stage: "reading", reviewId: "key" });
+
+      if (String(url).includes("/sharing/import/"))
+        return Response.json({
+          stage: "ready",
+          reviewId: "board",
+          title: "Board",
+        });
+
+      return Response.json({ ok: true });
+    });
+
+    await expect(
+      runReviewAppImport({ cwd: dir, file, repo: dir }, runtime(fetch)),
+    ).resolves.toEqual({
+      event: "app",
+      action: "import",
+      reviewUuid: "board",
+      title: "Board",
+    });
+    expect(
+      fetch.mock.calls.map(([url]) => new URL(String(url)).pathname),
+    ).toEqual([
+      "/health",
+      "/reviews-api/repositories",
+      "/reviews-api/sharing/import",
+      "/reviews-api/sharing/import/key",
+      "/reviews-api/board/open",
+    ]);
+  });
+
+  it.each(["bad", "frozen", "mismatch", "pins without remote"])(
+    "rejects %s before contacting Desktop",
+    async (kind) => {
+      const { dir, file, bundle } = await fixture();
+
+      if (kind === "bad") await writeFile(file, "not json");
+
+      if (kind === "frozen")
+        await writeFile(file, JSON.stringify({ ...bundle, frozen: true }));
+
+      if (kind === "mismatch")
+        execFileSync("git", [
+          "-C",
+          dir,
+          "remote",
+          "set-url",
+          "origin",
+          "https://github.com/other/repo.git",
+        ]);
+
+      if (kind === "pins without remote") {
+        const { repository: _repository, ...rest } = bundle;
+        await writeFile(
+          file,
+          JSON.stringify({
+            ...rest,
+            snapshot: {
+              ...bundle.snapshot,
+              pins: {
+                base: "a".repeat(40),
+                head: "b".repeat(40),
+                repositoryId: "repo",
+              },
+            },
+          }),
+        );
+      }
+
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      await expect(
+        runReviewAppImport({ cwd: dir, file, repo: dir }, runtime(fetch)),
+      ).rejects.toMatchObject({
+        code: kind === "mismatch" ? "remote_mismatch" : "invalid_file",
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [{ stage: "error", reviewId: "key", error: "failed" }, "import_failed"],
+    [
+      {
+        stage: "error",
+        reviewId: "key",
+        error: "checkout missing",
+        missingCheckout: { remote: "https://github.com/example/repo.git" },
+      },
+      "missing_checkout",
+    ],
+  ])("reports server import errors", async (status, code) => {
+    const { dir, file } = await fixture();
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (String(url).endsWith("/sharing/import"))
+        return Response.json({ stage: "reading", reviewId: "key" });
+
+      if (String(url).includes("/sharing/import/"))
+        return Response.json(status);
+
+      return Response.json({ ok: true });
+    });
+
+    await expect(
+      runReviewAppImport({ cwd: dir, file, repo: dir }, runtime(fetch)),
+    ).rejects.toMatchObject({
+      code,
+      ...("missingCheckout" in status && {
+        remote: status.missingCheckout.remote,
+      }),
+    });
+  });
+
+  it("restores a trashed imported board and opens it", async () => {
+    const { dir, file } = await fixture();
+    let opened = false;
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (String(url).endsWith("/sharing/import"))
+        return Response.json({
+          stage: "ready",
+          reviewId: "board",
+          title: "Board",
+        });
+
+      if (String(url).endsWith("/board/open") && !opened) {
+        opened = true;
+
+        return Response.json({ error: "In Trash" }, { status: 409 });
+      }
+
+      return Response.json({ ok: true });
+    });
+
+    await runReviewAppImport({ cwd: dir, file, repo: dir }, runtime(fetch));
+
+    const command = fetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/commands"),
+    );
+
+    expect(JSON.parse(String(command?.[1]?.body))).toEqual({
+      operation: { type: "lifecycle", reviewId: "board", state: "active" },
+    });
+    expect(
+      fetch.mock.calls.filter(([url]) => String(url).endsWith("/board/open")),
+    ).toHaveLength(2);
+  });
+
+  it("launches Desktop when none exists", async () => {
+    const { dir, file } = await fixture();
+    const launched = vi.fn<typeof launch>(launch);
+    let reads = 0;
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) =>
+      String(url).endsWith("/health")
+        ? healthyResponse()
+        : String(url).endsWith("/sharing/import")
+          ? Response.json({ stage: "ready", reviewId: "board", title: "Board" })
+          : Response.json({ ok: true }),
+    );
+
+    await runReviewAppImport(
+      { cwd: dir, file, repo: dir },
+      {
+        ...runtime(fetch, async () => (reads++ ? discovery : null)),
+        launch: launched,
+      },
+    );
+    expect(launched).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "lost post",
+    "failed poll",
+    "deadline after post",
+    "deadline before post",
+    "open fails",
+  ])("classifies %s", async (failure) => {
+    const { dir, file } = await fixture();
+    let aborted = false;
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (
+        (failure === "deadline before post" &&
+          String(url).endsWith("/repositories")) ||
+        (failure === "deadline after post" &&
+          String(url).endsWith("/sharing/import"))
+      ) {
+        return await new Promise<Response>((_, reject) =>
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(init.signal?.reason);
+            },
+            { once: true },
+          ),
+        );
+      }
+
+      if (String(url).endsWith("/sharing/import")) {
+        if (failure === "lost post") throw new Error("connection lost");
+
+        return Response.json(
+          failure === "open fails"
+            ? { stage: "ready", reviewId: "board", title: "Board" }
+            : { stage: "reading", reviewId: "key" },
+        );
+      }
+
+      if (String(url).includes("/sharing/import/"))
+        throw new Error("poll failed");
+
+      if (String(url).endsWith("/board/open"))
+        return Response.json({ error: "open failed" }, { status: 500 });
+
+      return Response.json({ ok: true });
+    });
+
+    await expect(
+      runReviewAppImport(
+        {
+          cwd: dir,
+          file,
+          repo: dir,
+          timeoutMs: failure.startsWith("deadline") ? 50 : 3000,
+        },
+        runtime(fetch),
+      ),
+    ).rejects.toMatchObject(
+      failure === "deadline before post"
+        ? { code: "no_desktop" }
+        : failure === "open fails"
+          ? { code: "imported_not_opened", reviewUuid: "board" }
+          : { code: "pending" },
+    );
+
+    expect(aborted).toBe(failure.startsWith("deadline"));
+  });
+
+  it("imports read-only without registering a checkout", async () => {
+    const { dir, file } = await fixture();
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) =>
+      String(url).endsWith("/health")
+        ? healthyResponse()
+        : String(url).endsWith("/sharing/import")
+          ? Response.json({ stage: "ready", reviewId: "board", title: "Board" })
+          : Response.json({ ok: true }),
+    );
+
+    await runReviewAppImport(
+      { cwd: dir, file, readOnly: true },
+      runtime(fetch),
+    );
+    expect(
+      fetch.mock.calls.some(([url]) => String(url).endsWith("/repositories")),
+    ).toBe(false);
+
+    const post = fetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/sharing/import"),
+    );
+
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      path: file,
+      readOnly: true,
+    });
+  });
+
+  it("rejects a bare repository before contacting Desktop", async () => {
+    const { dir, file } = await fixture();
+    const bare = path.join(dir, "bare.git");
+    execFileSync("git", ["init", "--bare", "-q", bare]);
+    execFileSync("git", [
+      "-C",
+      bare,
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/example/repo.git",
+    ]);
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    await expect(
+      runReviewAppImport({ cwd: dir, file, repo: bare }, runtime(fetch)),
+    ).rejects.toMatchObject({ code: "remote_mismatch" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("reports an explicit import rejection", async () => {
+    const { dir, file } = await fixture();
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (String(url).endsWith("/sharing/import"))
+        return Response.json({ error: "rejected" }, { status: 400 });
+
+      return Response.json({ ok: true });
+    });
+
+    await expect(
+      runReviewAppImport({ cwd: dir, file, repo: dir }, runtime(fetch)),
+    ).rejects.toMatchObject({ code: "import_failed" });
+  });
+
+  it("reports an imported board when focus fails", async () => {
+    const { dir, file } = await fixture();
+
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+      if (String(url).endsWith("/health")) return healthyResponse();
+
+      if (String(url).endsWith("/sharing/import"))
+        return Response.json({
+          stage: "ready",
+          reviewId: "board",
+          title: "Board",
+        });
+
+      if (String(url).endsWith("/app/focus")) throw new Error("focus failed");
+
+      return Response.json({ ok: true });
+    });
+
+    await expect(
+      runReviewAppImport(
+        { cwd: dir, file, repo: dir, focus: true },
+        runtime(fetch),
+      ),
+    ).rejects.toMatchObject({
+      code: "imported_not_opened",
+      reviewUuid: "board",
+    });
+  });
+
+  it("bounds Desktop selection by the deadline", async () => {
+    const { dir, file } = await fixture();
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    await expect(
+      runReviewAppImport(
+        { cwd: dir, file, readOnly: true, timeoutMs: 20 },
+        { fetch, selectInstance: () => new Promise(() => {}) },
+      ),
+    ).rejects.toMatchObject({ code: "no_desktop" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});

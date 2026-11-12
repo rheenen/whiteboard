@@ -17,9 +17,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runReviewCli } from "./cli-runner";
 import {
+  ReviewAppImportError,
   ReviewAppStateError,
   ReviewAppUsageError,
   runReviewAppPick as runReviewAppActual,
+  runReviewAppImport as runReviewAppImportActual,
 } from "./review-app";
 import { runReviewAppLaunch as runReviewAppLaunchActual } from "./review-app-launcher";
 import { runReviewInfo as runReviewInfoActual } from "./review-info";
@@ -287,6 +289,122 @@ describe("Whiteboard CLI", () => {
       });
     },
   );
+
+  it("passes app import arguments and prints its JSON result", async () => {
+    const runReviewAppImport = vi.fn<typeof runReviewAppImportActual>(
+      async () => ({
+        event: "app",
+        action: "import",
+        reviewUuid: "board",
+        title: "Board",
+      }),
+    );
+
+    const stdout = outputStream();
+    let output = "";
+    stdout.on("data", (chunk) => (output += String(chunk)));
+    expect(
+      await runReviewCli({
+        argv: [
+          "app",
+          "import",
+          "file.whiteboard",
+          "--repo",
+          "repo",
+          "--read-only",
+          "--focus",
+          "--timeout",
+          "12",
+          "--json",
+        ],
+        cwd: "/work",
+        stdout,
+        stderr: outputStream(),
+        runtime: { runReviewAppImport },
+      }),
+    ).toBe(0);
+    expect(runReviewAppImport).toHaveBeenCalledWith({
+      cwd: "/work",
+      file: "file.whiteboard",
+      repo: "repo",
+      readOnly: true,
+      focus: true,
+      timeoutMs: 12000,
+    });
+    expect(JSON.parse(output)).toEqual({
+      event: "app",
+      action: "import",
+      reviewUuid: "board",
+      title: "Board",
+    });
+  });
+
+  it("emits an import error with its code and board id", async () => {
+    const runReviewAppImport = vi.fn<typeof runReviewAppImportActual>(
+      async () => {
+        throw new ReviewAppImportError(
+          "Could not open",
+          "imported_not_opened",
+          undefined,
+          "board",
+        );
+      },
+    );
+
+    const stdout = outputStream();
+    let output = "";
+    stdout.on("data", (chunk) => (output += String(chunk)));
+    expect(
+      await runReviewCli({
+        argv: ["app", "import", "file.whiteboard", "--read-only", "--json"],
+        stdout,
+        stderr: outputStream(),
+        runtime: { runReviewAppImport },
+      }),
+    ).toBe(1);
+    expect(JSON.parse(output)).toEqual({
+      event: "error",
+      error: {
+        name: "ReviewAppImportError",
+        message: "Could not open",
+        code: "imported_not_opened",
+        reviewUuid: "board",
+      },
+    });
+  });
+
+  it("includes the remote in a missing checkout error", async () => {
+    const runReviewAppImport = vi.fn<typeof runReviewAppImportActual>(
+      async () => {
+        throw new ReviewAppImportError(
+          "Missing checkout",
+          "missing_checkout",
+          "https://example.test/repo",
+        );
+      },
+    );
+
+    const stdout = outputStream();
+    let output = "";
+    stdout.on("data", (chunk) => (output += String(chunk)));
+    expect(
+      await runReviewCli({
+        argv: ["app", "import", "file.whiteboard", "--read-only", "--json"],
+        stdout,
+        stderr: outputStream(),
+        runtime: { runReviewAppImport },
+      }),
+    ).toBe(1);
+    expect(JSON.parse(output)).toEqual({
+      event: "error",
+      error: {
+        name: "ReviewAppImportError",
+        message: "Missing checkout",
+        code: "missing_checkout",
+        remote: "https://example.test/repo",
+      },
+    });
+  });
 
   it("passes --focus through app pick", async () => {
     const runReviewAppPick = vi.fn<typeof runReviewAppActual>(async () => ({
