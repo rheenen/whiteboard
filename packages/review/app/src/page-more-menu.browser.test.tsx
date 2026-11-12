@@ -1,5 +1,4 @@
 import type {
-  ReviewApiClient,
   ReviewCanvasBridge,
   ReviewMenuRequest,
 } from "@dev.fast/review-protocol";
@@ -7,18 +6,17 @@ import { act } from "react";
 import { type Root, createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { ExportContext } from "./export-context";
 import { CanvasUiContext } from "./host/canvas-ui";
 import { ReviewSessionProvider } from "./host/review-session";
 import { PageMoreMenu } from "./page-more-menu";
 import { ReviewProvider } from "./review-context";
 import { ReviewCornerAction } from "./review-corner-action";
 import { testReviewSession } from "./review-session-test-utils";
-import { SharingContext } from "./share-control";
 
 let root: Root | null = null;
 
-// SAFETY: the menu never calls the client.
-const shareable = { client: {} as ReviewApiClient, reviewId: "r1", version: 3 };
+const exportable = { reviewId: "r1", version: 3 };
 
 /** The last menu the canvas asked the host to show. */
 let menu: Omit<ReviewMenuRequest, "anchor" | "onHide"> | undefined;
@@ -127,45 +125,36 @@ it("keeps the corner's Move to Trash enabled and focused while the move is in fl
   expect(document.activeElement).toBe(button);
 });
 
-it.each([
-  ["while the board can be shared", shareable],
-  [
-    "while the installation turned share links off",
-    { ...shareable, linksDisabled: true },
-  ],
-])(
-  "offers Export file… %s, and asks the host to write it",
-  async (_, value) => {
-    const post = vi.fn<ReviewCanvasBridge["post"]>(async () => ({ ok: true }));
-    const session = testReviewSession({}, { post });
+it("offers Export file… and asks the host to write it", async () => {
+  const post = vi.fn<ReviewCanvasBridge["post"]>(async () => ({ ok: true }));
+  const session = testReviewSession({}, { post });
 
-    const container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
+  const container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
 
-    await act(async () =>
-      root?.render(
-        <ReviewSessionProvider session={session}>
-          <CanvasUiContext.Provider value={ui}>
-            <ReviewProvider>
-              <SharingContext.Provider value={value}>
-                <PageMoreMenu views={[]} onShowView={() => {}} />
-              </SharingContext.Provider>
-            </ReviewProvider>
-          </CanvasUiContext.Provider>
-        </ReviewSessionProvider>,
-      ),
-    );
+  await act(async () =>
+    root?.render(
+      <ReviewSessionProvider session={session}>
+        <CanvasUiContext.Provider value={ui}>
+          <ReviewProvider>
+            <ExportContext.Provider value={exportable}>
+              <PageMoreMenu views={[]} onShowView={() => {}} />
+            </ExportContext.Provider>
+          </ReviewProvider>
+        </CanvasUiContext.Provider>
+      </ReviewSessionProvider>,
+    ),
+  );
 
-    await act(async () =>
-      container.querySelector<HTMLElement>('[aria-label="More"]')!.click(),
-    );
-    expect(menu?.items.map((item) => item.label)).toContain("Export file…");
+  await act(async () =>
+    container.querySelector<HTMLElement>('[aria-label="More"]')!.click(),
+  );
+  expect(menu?.items.map((item) => item.label)).toContain("Export file…");
 
-    await act(async () => menu!.onSelect("export"));
-    expect(post).toHaveBeenCalledWith({
-      name: "exportReviewFile",
-      args: { reviewId: "r1", version: 3 },
-    });
-  },
-);
+  await act(async () => menu!.onSelect("export"));
+  expect(post).toHaveBeenCalledWith({
+    name: "exportReviewFile",
+    args: { reviewId: "r1", version: 3 },
+  });
+});

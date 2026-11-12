@@ -104,7 +104,6 @@ import { useBottomSheetResize } from "./side-panel-resizer";
 import { panelStyles, tourStyles } from "./side-panel-styles";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 
 const TOUR_ACTIVE_TOP_SLACK_PX = 18;
 
@@ -433,10 +432,6 @@ export function ProsePeekAnchor({
           onAlreadyOpen();
 
           return;
-        }
-
-        if (session) {
-          captureUiEvent(session, "peek_opened", { via: "prose_link" });
         }
 
         onOpen(event.currentTarget.textContent?.trim() ?? "");
@@ -785,11 +780,7 @@ function CodeReviewPeekPanel({
         ) : null}
 
         <div {...stylex.props(panelStyles.peekContent)}>
-          <ReviewPeekContentView
-            anchor={anchor}
-            content={content}
-            reportOutcome
-          />
+          <ReviewPeekContentView anchor={anchor} content={content} />
         </div>
       </div>
     </ReviewPanelFrame>
@@ -822,58 +813,13 @@ export function GuidedTourPanel({
     (stop) => stop.anchor.id === activeAnchor,
   );
 
-  const activeIndexRef = useRef(activeIndex);
-  activeIndexRef.current = activeIndex;
-  const previousActiveIndexRef = useRef(activeIndex);
-  const completedTourIdRef = useRef<string | null>(null);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const [tailHeight, setTailHeight] = useState(0);
   const [hasScrolled, setHasScrolled] = useState(false);
 
   useEffect(() => {
-    completedTourIdRef.current = null;
-    previousActiveIndexRef.current = activeIndexRef.current;
     setHasScrolled(false);
   }, [tour.id]);
-
-  useEffect(() => {
-    const previousIndex = previousActiveIndexRef.current;
-    previousActiveIndexRef.current = activeIndex;
-
-    if (activeIndex <= previousIndex || activeIndex < 0) return;
-    captureUiEvent(session, "tour_step_advanced", {
-      step: activeIndex + 1,
-      steps: tour.stops.length,
-    });
-  }, [activeIndex, session, tour.stops.length]);
-
-  const captureAbandoned = useEffectEvent((step: number, steps: number) => {
-    captureUiEvent(session, "tour_abandoned", { step, steps });
-  });
-
-  useEffect(() => {
-    let armed = false;
-
-    const timer = window.setTimeout(() => {
-      armed = true;
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-      const index = activeIndexRef.current;
-
-      if (
-        !armed ||
-        tour.stops.length === 0 ||
-        index >= tour.stops.length - 1 ||
-        completedTourIdRef.current === tour.id
-      ) {
-        return;
-      }
-
-      captureAbandoned(Math.max(0, index) + 1, tour.stops.length);
-    };
-  }, [session.appSessionId, tour.id, tour.stops.length]);
 
   // Scroll-syncing activates a stop when its top crosses the active line, so
   // the last stop must be able to reach it: the tail spacer grants exactly
@@ -919,19 +865,6 @@ export function GuidedTourPanel({
 
     return () => observer.disconnect();
   }, [tour]);
-
-  useEffect(() => {
-    if (
-      tour.stops.length === 0 ||
-      activeIndex < tour.stops.length - 1 ||
-      completedTourIdRef.current === tour.id
-    ) {
-      return;
-    }
-
-    completedTourIdRef.current = tour.id;
-    captureUiEvent(session, "tour_completed", { steps: tour.stops.length });
-  }, [activeIndex, session, tour]);
 
   useEffect(() => {
     if (handledRevealRequestRef.current === revealRequest) return;
@@ -1280,13 +1213,11 @@ function ReviewPeekContentView({
   content,
   active,
   onNativeFocus,
-  reportOutcome = false,
 }: {
   anchor: PeekAnchor;
   content: ReviewPeekContent;
   active?: boolean;
   onNativeFocus?: () => void;
-  reportOutcome?: boolean;
 }) {
   if (content.kind === "explanation")
     return content.text ? (
@@ -1299,7 +1230,6 @@ function ReviewPeekContentView({
         sources={[content.source, ...(content.more ?? [])]}
         active={active}
         onNativeFocus={onNativeFocus}
-        reportOutcome={reportOutcome}
       />
     );
   }

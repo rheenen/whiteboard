@@ -44,8 +44,6 @@ import {
   ReviewVerbResponseSchema,
 } from "./contracts.js";
 
-export * from "./bug-report.js";
-
 export * from "@dev.fast/json";
 
 export * from "./contracts.js";

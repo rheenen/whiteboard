@@ -11,18 +11,17 @@ import {
 	Severity,
 } from "../../../platform/notification/common/notification.js";
 import { IProgressService, ProgressLocation } from "../../../platform/progress/common/progress.js";
-import { IURLService, type IURLHandler } from "../../../platform/url/common/url.js";
 import {
 	registerWorkbenchContribution2,
 	WorkbenchPhase,
 } from "../../../workbench/common/contributions.js";
 import { IPathService } from "../../../workbench/services/path/common/pathService.js";
 import { ReviewApiClient } from "../../common/reviewProtocol.js";
-import { shareUrlFromDeepLink } from "../../common/reviewShareLink.js";
 import { IReviewCanvasEditorTabsService } from "../../services/reviewCanvasEditorTabsService.js";
 import { IReviewDesktopConnectionService } from "../../services/reviewDesktopConnectionService.js";
 
-type ShareSource = { url: string } | { path: string; readOnly?: boolean };
+/** A .whiteboard file on this machine. */
+type ShareSource = { path: string; readOnly?: boolean };
 
 interface ImportStatus {
 	reviewId: string;
@@ -33,7 +32,7 @@ interface ImportStatus {
 	missingCheckout?: { remote?: string; name: string };
 }
 
-/** What opening a share uses. */
+/** What opening a whiteboard file uses. */
 interface ShareServices {
 	session: IReviewDesktopConnectionService;
 	tabs: IReviewCanvasEditorTabsService;
@@ -54,13 +53,12 @@ async function openShare(source: ShareSource, services: ShareServices) {
 	const { session, tabs, notifications, progress } = services;
 	try {
 		const client = new ReviewApiClient(await session.getConnection());
-		const title = "path" in source ? "Opening whiteboard file" : "Opening shared review";
-		await progress.withProgress({ location: ProgressLocation.Notification, title }, async (reporter) => {
+		await progress.withProgress({ location: ProgressLocation.Notification, title: "Opening whiteboard file" }, async (reporter) => {
 			const started = await client.post<{ reviewId: string }>("/sharing/import", source);
 			for (;;) {
 				const status = await client.read<ImportStatus>(`/sharing/import/${started.reviewId}`);
 				if (status.stage === "error") {
-					const message = status.error ?? "Could not open the shared session.";
+					const message = status.error ?? "Could not open the whiteboard file.";
 					throw status.missingCheckout ? new MissingCheckout(message, status.missingCheckout) : new Error(message);
 				}
 				if (status.stage === "ready") {
@@ -73,14 +71,14 @@ async function openShare(source: ShareSource, services: ShareServices) {
 						? "Preparing pinned source…"
 						: status.stage === "reading"
 							? "Reading the file…"
-							: "Downloading review resources…";
+							: "Opening…";
 				reporter.report({ message });
 				await new Promise((resolve) => setTimeout(resolve, 500));
 			}
 		});
 	} catch (error) {
 		const retry = { label: "Retry", run: () => openShare(source, services) };
-		if (error instanceof MissingCheckout && "path" in source) {
+		if (error instanceof MissingCheckout) {
 			const { remote, name } = error.checkout;
 			notifications.prompt(
 				Severity.Info,
@@ -96,7 +94,7 @@ async function openShare(source: ShareSource, services: ShareServices) {
 		}
 		notifications.prompt(
 			Severity.Error,
-			error instanceof Error ? error.message : "Could not open the shared session.",
+			error instanceof Error ? error.message : "Could not open the whiteboard file.",
 			[retry],
 		);
 	}
@@ -149,17 +147,13 @@ function shareServices(accessor: ServicesAccessor): ShareServices {
 	};
 }
 
-class SharedReviewUrlHandler extends Disposable implements IURLHandler {
+/** Opens a .whiteboard file the operating system hands to Whiteboard. */
+class WhiteboardFileOpener extends Disposable {
 	private readonly services: ShareServices;
 
-	constructor(
-		@IURLService urls: IURLService,
-		@IInstantiationService instantiation: IInstantiationService,
-		@INotificationService private readonly notifications: INotificationService,
-	) {
+	constructor(@IInstantiationService instantiation: IInstantiationService) {
 		super();
 		this.services = instantiation.invokeFunction(shareServices);
-		this._register(urls.registerHandler(this));
 		const onFile = (_event: unknown, ...args: unknown[]) => {
 			const [path] = args;
 			if (typeof path === "string") void openShare({ path }, this.services);
@@ -167,19 +161,10 @@ class SharedReviewUrlHandler extends Disposable implements IURLHandler {
 		ipcRenderer.on("vscode:openWhiteboardFile", onFile);
 		this._register({ dispose: () => ipcRenderer.removeListener("vscode:openWhiteboardFile", onFile) });
 	}
-	async handleURL(uri: URI): Promise<boolean> {
-		if (uri.authority !== "share") return false;
-		try {
-			await openShare({ url: shareUrlFromDeepLink(uri.path, uri.query) }, this.services);
-		} catch {
-			this.notifications.error("Invalid Whiteboard share link.");
-		}
-		return true;
-	}
 }
 registerWorkbenchContribution2(
-	"review.sharing.urls",
-	SharedReviewUrlHandler,
+	"review.sharing.files",
+	WhiteboardFileOpener,
 	WorkbenchPhase.BlockRestore,
 );
 registerAction2(

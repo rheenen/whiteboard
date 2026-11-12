@@ -39,7 +39,6 @@ import { reviewFindRanges } from "./review-find-text";
 import { useReviewRoots } from "./review-root-context";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 
 const ALL_HIGHLIGHT = "review-find-match";
 
@@ -117,9 +116,7 @@ export function ReviewFindProvider({
   const session = useOptionalReviewSession();
 
   const [controller] = useState(() =>
-    createFindController(articleRef, session ?? undefined, (surface) => {
-      if (session) captureUiEvent(session, "find_opened", { surface });
-    }),
+    createFindController(articleRef, session ?? undefined),
   );
 
   const previousDocument = useRef(documentKey);
@@ -155,7 +152,6 @@ type ReviewFindController = ReturnType<typeof createFindController>;
 function createFindController(
   articleRef: RefObject<HTMLElement | null>,
   config?: ReviewClientConfig,
-  onOpen?: (surface: ReviewFindSurface) => void,
 ) {
   const store = createReviewFindStore(config);
   const registrations = new Set<ReviewPeekFindRegistration>();
@@ -338,7 +334,6 @@ function createFindController(
       if (!store.getState().open) {
         const active = articleRef.current?.ownerDocument.activeElement;
         priorFocus = active instanceof HTMLElement ? active : null;
-        onOpen?.(surface);
         store
           .getState()
           .show(

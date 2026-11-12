@@ -47,7 +47,6 @@
     "review": "tsx src/cli.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:node": "vitest run --config vitest.config.ts --project shared-module-graph",
-    "test:telemetry-privacy": "vitest run --config vitest.config.ts src/ui-telemetry-events.test.ts src/error-telemetry.test.ts",
     "typecheck": "pnpm -w exec tsc --noEmit -p packages/review",
     "test:integration:diffr": "pnpm run build:workspace-deps && vitest run --config vitest.integration.config.ts",
     "whiteboard": "tsx src/cli.ts"

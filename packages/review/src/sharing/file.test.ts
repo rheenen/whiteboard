@@ -21,8 +21,6 @@ import {
 import { mountSharingHost, mountSharingPublisher } from "./host.js";
 import {
   cloneForReader,
-  type cloneSharedRepository,
-  fetchPinnedRepository,
   readShareRepository,
   sharedProtocols,
 } from "./repository.js";
@@ -187,19 +185,7 @@ async function recipientApi() {
     ),
   );
 
-  const fetchRepository = vi.fn<typeof fetchPinnedRepository>(
-    (target, _url, ...rest) =>
-      fetchPinnedRepository(target, sender.repo, ...rest),
-  );
-
-  const cloneRepository = vi.fn<typeof cloneSharedRepository>(async () => {
-    throw new Error("A file never clones.");
-  });
-
-  mountSharingHost(api, recipient.store, recipient.data, {
-    fetchRepository,
-    cloneRepository,
-  });
+  mountSharingHost(api, recipient.store, recipient.data);
 
   const text = whiteboardFileText(
     await exportShare({
@@ -225,9 +211,7 @@ async function recipientApi() {
   const file = path.join(sender.root, "board.whiteboard");
   await writeFile(file, text);
 
-  const open = async (
-    body: { path: string; readOnly?: boolean } | { url: string },
-  ) => {
+  const open = async (body: { path: string; readOnly?: boolean }) => {
     const started = await api.request("/sharing/import", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -265,8 +249,6 @@ async function recipientApi() {
     open,
     clone,
     checkout,
-    fetchRepository,
-    cloneRepository,
   };
 }
 
@@ -290,15 +272,13 @@ it("imports a .whiteboard file once per content", async () => {
 });
 
 it("never clones for a file: it asks for a checkout of the repository", async () => {
-  const { file, open, fetchRepository, cloneRepository } = await recipientApi();
+  const { file, open } = await recipientApi();
 
   expect(await open({ path: file })).toMatchObject({
     stage: "error",
     error:
       "Open a checkout of fixture / review in Whiteboard first, then open this file again.",
   });
-  expect(fetchRepository).not.toHaveBeenCalled();
-  expect(cloneRepository).not.toHaveBeenCalled();
 });
 
 it("offers to clone the repository a file needs, and clones only that one", async () => {
@@ -349,13 +329,12 @@ it("clones into a new folder only, and leaves nothing behind when it fails", asy
 });
 
 it("opens a file read-only without a checkout, reading the lines it carries", async () => {
-  const { recipient, text, file, open, fetchRepository } = await recipientApi();
+  const { recipient, text, file, open } = await recipientApi();
 
   const opened = await open({ path: file, readOnly: true });
 
   expect(opened.error).toBeUndefined();
   expect(opened.stage).toBe("ready");
-  expect(fetchRepository).not.toHaveBeenCalled();
 
   const pins = recipient.store.read(opened.reviewId).pins!;
   const [excerpt] = parseWhiteboardFile(text).sources;

@@ -148,7 +148,6 @@ export function createReviewGateway(input: {
   firstByteMs?: number;
   slowRouteMs?: number;
   restarted?(alias: string): void;
-  remoteEvent?(request: Request, reviewId: string): Promise<void>;
   log?(message: string): void;
 }) {
   const log = input.log ?? (() => {});
@@ -362,7 +361,7 @@ export function createReviewGateway(input: {
   async function review(
     request: Request,
     reviewId: string,
-    route?: RemoteRoute | "telemetry",
+    route?: RemoteRoute,
   ): Promise<Response> {
     if (!reviewId || LOCAL_ROUTES.has(reviewId)) return input.local(request);
     const owner = await ownerOf(reviewId);
@@ -370,17 +369,6 @@ export function createReviewGateway(input: {
     if (owner === undefined || owner === "local") return input.local(request);
 
     const alias = "remote" in owner ? owner.remote.alias : owner.down.alias;
-
-    if (route === "telemetry") {
-      if (
-        input.remoteEvent &&
-        new URL(request.url).pathname.endsWith("/telemetry/event")
-      )
-        await input.remoteEvent(request, reviewId);
-      else await request.body?.cancel();
-
-      return answer(alias, 200, { ok: true });
-    }
 
     if (!route)
       return answer(alias, 404, {
@@ -398,9 +386,6 @@ export function createReviewGateway(input: {
   app.post("/commands", (context) => command(context.req.raw));
   app.get("/", (context) => streams.list(context.req.raw));
   app.get("/watch", (context) => streams.watch(context.req.raw));
-  app.all("/:id/telemetry/*", (context) =>
-    review(context.req.raw, context.req.param("id"), "telemetry"),
-  );
 
   for (const route of REMOTE_ROUTES)
     app.on(route.method, `/:id${route.path && `/${route.path}`}`, (context) =>

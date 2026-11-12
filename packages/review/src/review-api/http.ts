@@ -61,13 +61,8 @@ import { fuzzyRank } from "@review/fuzzy-match.js";
 import { resolveReviewStackLayers } from "@review/review-stack.js";
 import { readBoundedRequestJson } from "@review/server/hono-http.js";
 import { HttpJsonError } from "@review/server/http-json.js";
-import {
-  type RemoteShare,
-  type SharingHostEvents,
-  mountSharingHost,
-} from "@review/sharing/host.js";
+import { type RemoteShare, mountSharingHost } from "@review/sharing/host.js";
 import { forgetSharedCommits } from "@review/sharing/repository.js";
-import type { ReviewSessionAgent } from "@review/ui-telemetry-events.js";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 
@@ -92,8 +87,6 @@ import {
 import {
   REVIEW_PERSON_HEADER,
   REVIEW_THREAD_HEADER,
-  type ReviewRequestVia,
-  reviewRequestOrigin,
 } from "./request-origin.js";
 import { COMMENT_BODY_LIMIT } from "./review-comments.js";
 import {
@@ -169,18 +162,10 @@ export interface AuthoringCapabilities {
   softwareMapEnabled: boolean;
 }
 
-/**
- * What the host reports about reviews, for telemetry. `onReviewCreated` fires
- * again for a replayed create command; consumers dedupe by review id.
- */
+/** What the host plugs into the review API. */
 export interface ReviewApiHooks {
-  onReviewCreated?: (event: {
-    reviewId: string;
-    blocks: number;
-    via: ReviewRequestVia;
-    agentKind?: ReviewSessionAgent;
-  }) => void;
-  sharing?: SharingHostEvents & { remoteShare?: RemoteShare };
+  /** Prepares a remote board's `.whiteboard` file on its host. */
+  sharing?: { remoteShare?: RemoteShare };
 }
 
 /** A person's save carries the whole board, which edits one at a time can
@@ -199,7 +184,7 @@ export function createReviewApi(
     reviewId: string;
     title: string;
   }) => Promise<{ softwareMapEnabled: boolean }>,
-  /** Desktop's: share sign-in and imports. */
+  /** Desktop's: `.whiteboard` file import. */
   sharing = false,
   capabilities: () =>
     | AuthoringCapabilities
@@ -324,10 +309,6 @@ export function createReviewApi(
   };
 
   app.get("/", (context) => context.json(catalog()));
-
-  app.get("/feedback-eligibility", (context) =>
-    context.json({ eligible: store.feedbackEligible() }),
-  );
 
   // Server-owned state only: asking the Desktop canvas would let a stalled
   // renderer block tool listing and the first instructions call.
@@ -2358,14 +2339,6 @@ export function createReviewApi(
     }
 
     if (input.operation.type !== "create") return context.json(result);
-
-    // False when an existing review for the same PR came back.
-    if (result.created !== false)
-      hooks.onReviewCreated?.({
-        reviewId: result.reviewId,
-        blocks: store.read(result.reviewId).document.length,
-        ...reviewRequestOrigin(context.req.raw.headers),
-      });
 
     return context.json({
       ...result,

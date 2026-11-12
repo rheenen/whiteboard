@@ -86,8 +86,6 @@ export async function createHarness({
     HOME: home,
     DEV_REVIEW_HOME: home,
     DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",
-    DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
-    DEV_FAST_REVIEW_TELEMETRY_ENV: "e2e",
     DEV_REVIEW_EXTENSIONS: extensions,
     // Never takes focus; windows still paint, at opacity 0.
     DEV_FAST_REVIEW_DESKTOP_BACKGROUND: "hidden",

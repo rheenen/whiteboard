@@ -1,4 +1,4 @@
-/** This checkout's remote tarballs and install.sh over plain HTTP, as install.dev.fast serves a release's; any path resolves by file name. */
+/** This checkout's remote tarballs and install.sh over plain HTTP, as a self-hosted release base serves them; any path resolves by file name. */
 import { createReadStream } from "node:fs";
 import { copyFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -20,7 +20,9 @@ function laptopAddress() {
     )?.address;
 
   if (!address)
-    throw new Error("no network address the containers can reach this laptop at");
+    throw new Error(
+      "no network address the containers can reach this laptop at",
+    );
 
   return address;
 }
@@ -37,7 +39,9 @@ export async function serveReleases() {
     let name;
 
     try {
-      name = decodeURIComponent(new URL(request.url, "http://x").pathname.slice(1));
+      name = decodeURIComponent(
+        new URL(request.url, "http://x").pathname.slice(1),
+      );
     } catch {
       return response.writeHead(400).end();
     }
@@ -46,11 +50,15 @@ export async function serveReleases() {
 
     const found =
       name === "" ||
-      (await stat(file).then((s) => s.isFile(), () => false));
+      (await stat(file).then(
+        (s) => s.isFile(),
+        () => false,
+      ));
 
     response.writeHead(found ? 200 : 404);
 
-    if (!found || name === "" || request.method === "HEAD") return response.end();
+    if (!found || name === "" || request.method === "HEAD")
+      return response.end();
 
     createReadStream(file).pipe(response);
   });

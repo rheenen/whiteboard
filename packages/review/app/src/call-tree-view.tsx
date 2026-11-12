@@ -22,7 +22,6 @@ import { callEdgeMarker } from "./markers.stylex";
 import { useReviewLenses } from "./review-lenses";
 import { useReviewPanel } from "./review-panel";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 
 // Presentation retained from review-experimental's DiffWorkspace.
 export function CallTree({
@@ -282,8 +281,6 @@ export function DocumentCallTree({ block }: { block: CallStackDiffBlock }) {
         block={block}
         commentsOn={block.id}
         onReveal={(source, sectionId, anchorId) => {
-          captureUiEvent(session, "peek_opened", { via: "call_stack_frame" });
-
           const stop = callTreeStops(block).find(
             (stop) => stop.id === sectionId,
           )!;

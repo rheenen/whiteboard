@@ -12,7 +12,6 @@ import {
   AuthoringActivityBadge,
   ReviewSurfaceLabel,
 } from "./authoring-activity";
-import { BugReportControl } from "./bug-report-dialog";
 import { LanguageServerChip } from "./connection-chip";
 import { useReviewDebugSettings } from "./debug-settings";
 import { DiffLayoutControl } from "./diff-layout-control";
@@ -32,11 +31,9 @@ import { BoardUpdatedAt, useBoardPlace } from "./review-doc-meta";
 import { useReviewPanel } from "./review-panel";
 import { reviewViewLabel } from "./review-view-route";
 import { leading, space } from "./scale.stylex";
-import { ShareControl, useCanShare } from "./share-control";
 import { shellStyles } from "./shell-styles";
 import { themeClass, themeStyles } from "./theme-styles";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 import { SegmentedControl } from "./ui/segmented";
 import { useWhiteboardData } from "./whiteboard";
 
@@ -55,9 +52,6 @@ export function ReviewTopBar(): ReactElement {
   const sidebarLeads = session.bridge.reportSidebar !== undefined;
   const pageBar = useRef<HTMLElement>(null);
   const fold = usePageBarFold(pageBar, sidebarLeads);
-  const canShare = useCanShare();
-  const share = useRef<{ open(): void }>(null);
-  const bugReport = useRef<{ open(): void }>(null);
   const debugSettings = useReviewDebugSettings();
   const activeView = useReviewPanel((state) => state.view);
   const reviewViews = useReviewPanel((state) => state.availableViews);
@@ -68,35 +62,16 @@ export function ReviewTopBar(): ReactElement {
     (state) => state.contentsRailHidden,
   );
 
-  const { diffScope, fileCount } = useDiffScope(data.commits ?? noCommits);
+  const { fileCount } = useDiffScope(data.commits ?? noCommits);
 
   const joinDiscord = () => {
-    captureUiEvent(session, "discord_clicked", { via: "topbar" });
     session.surface.post({ name: "joinDiscord", args: {} });
   };
 
-  // Narrowest first out: Share last, after Discord and the bug report.
-  const folded: PageMoreFolded[] = [
-    ...(fold >= 3 && canShare
-      ? [
-          {
-            id: "share",
-            label: "Share…",
-            onSelect: () => share.current?.open(),
-          },
-        ]
-      : []),
-    ...(fold >= 2
-      ? [
-          { id: "discord", label: "Join our Discord", onSelect: joinDiscord },
-          {
-            id: "bug",
-            label: "Report a bug…",
-            onSelect: () => bugReport.current?.open(),
-          },
-        ]
-      : []),
-  ];
+  const folded: PageMoreFolded[] =
+    fold >= 2
+      ? [{ id: "discord", label: "Join our Discord", onSelect: joinDiscord }]
+      : [];
 
   const discordTooltip = useTooltip("Join our Discord community");
 
@@ -105,12 +80,6 @@ export function ReviewTopBar(): ReactElement {
       ? "Open full read-only source"
       : (available?.reason ?? "Source windows are unavailable."),
   );
-
-  const showDiff = (via: "topbar" | "locate") =>
-    captureUiEvent(session, "diff_opened", {
-      kind: diffScope ? "commit" : "structural",
-      via,
-    });
 
   const settled = !review.historicalRevision && !review.submissionOutcome;
 
@@ -161,10 +130,7 @@ export function ReviewTopBar(): ReactElement {
                 ),
               count: view === "diff" ? (fileCount ?? undefined) : undefined,
             }))}
-            onChange={(view) => {
-              if (view === "diff") showDiff("topbar");
-              showView(view);
-            }}
+            onChange={showView}
           />
         )}
       </div>
@@ -186,9 +152,6 @@ export function ReviewTopBar(): ReactElement {
               disabled={!sourceWindows}
               ref={sourceTreeTooltip}
               onClick={() => {
-                captureUiEvent(session, "source_tree_opened", {
-                  via: "topbar",
-                });
                 // The desktop already showed why it failed.
                 session.surface
                   .post({ name: "openSourceTree", args: {} })
@@ -204,14 +167,8 @@ export function ReviewTopBar(): ReactElement {
           {session.review?.available?.pending && session.review.host ? (
             <LanguageServerChip host={session.review.host} />
           ) : null}
-          <AuthoringActivityBadge
-            onLocate={(view) => {
-              if (view === "diff") showDiff("locate");
-              showView(view);
-            }}
-          />
+          <AuthoringActivityBadge onLocate={showView} />
         </div>
-        <ShareControl folded={fold >= 3} handle={share} />
         {fold >= 2 ? null : (
           <IconButton
             xstyle={shellStyles.topbarItem}
@@ -223,7 +180,6 @@ export function ReviewTopBar(): ReactElement {
             <DiscordIcon xstyle={iconStyles.chrome} />
           </IconButton>
         )}
-        <BugReportControl folded={fold >= 2} handle={bugReport} />
         <ReviewBatonChip outcome={review.submissionOutcome} />
         <DiffLayoutControl />
         {sidebarLeads ? (

@@ -22,8 +22,6 @@ function unexpected(): never {
 
 function settings(): ReviewCanvasSettingsContent {
   return {
-    telemetryEnabled: false,
-    setTelemetryEnabled: async (enabled) => enabled,
     theme: "Review Dark",
     setTheme: async (id) => id,
     diffTheme: "",

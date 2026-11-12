@@ -92,9 +92,7 @@ import { SoftwareMap } from "./software-map/SoftwareMap";
 import { withClass } from "./stylex-props";
 import { themeClass, themeStyles } from "./theme-styles";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 import { SegmentedControl, labeledOptions } from "./ui/segmented";
-import { useReviewTabTelemetry } from "./use-review-tab-telemetry";
 
 const DEFAULT_SIDE_PEEK_WIDTH = 560;
 
@@ -378,8 +376,6 @@ function ReviewLayoutContent({
 
   const lenses = useReviewLenses();
 
-  useReviewTabTelemetry(activeView);
-
   const tocEntries = document.tocEntries ?? [];
 
   // The Diff view's folded Contents opens the document at a heading.
@@ -521,22 +517,12 @@ function ReviewLayoutContent({
 
       if (event.event !== "showReviewView") return;
 
-      const {
-        availableViews,
-        showView,
-        diffScope: scope,
-      } = panelStore.getState();
-
+      const { availableViews, showView } = panelStore.getState();
       const view = event.view;
 
       if (!availableViews.includes(view)) return;
 
       // Desktop's sidebar tabs open the diff in place of the strip.
-      if (view === "diff" && event.reviewId)
-        captureUiEvent(session, "diff_opened", {
-          kind: scope ? "commit" : "structural",
-          via: "sidebar",
-        });
       showView(view);
     });
 

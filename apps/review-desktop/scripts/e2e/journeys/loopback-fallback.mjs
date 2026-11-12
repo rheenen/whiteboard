@@ -1,4 +1,4 @@
-/** A renderer that cannot complete https, here through a wrong pinned cert, falls back to plain HTTP and says so. */
+/** A renderer that cannot complete https, here through a wrong pinned cert, falls back to plain HTTP. */
 import assert from "node:assert/strict";
 
 import { createReview } from "../harness.mjs";
@@ -10,8 +10,6 @@ export const phase = 1;
 export const options = {
   env: {
     DEV_FAST_REVIEW_TLS_PIN_MISMATCH: "1",
-    DEV_FAST_REVIEW_TELEMETRY_DISABLED: "",
-    DEV_FAST_REVIEW_TELEMETRY_DEBUG: "1",
   },
 };
 
@@ -37,15 +35,4 @@ export async function run(ctx) {
   await cdp.detach();
 
   assert.deepEqual([...protocols], ["http:http/1.1"]);
-
-  const fallback = await ctx.until(
-    () =>
-      ctx
-        .appLog()
-        .split("\n")
-        .find((line) => line.includes('"review_loopback_tls_fallback"')),
-    "the fallback telemetry event",
-  );
-
-  assert.match(fallback, /"error_name":"TypeError"/);
 }

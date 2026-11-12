@@ -36,11 +36,6 @@ export BUILD_SOURCEVERSION
 # that both targets reuse.
 npm --prefix "$CHECKOUT" run gulp -- vscode-darwin-arm64-min-prepare
 
-# Tags the bundles, so it must run before they are archived.
-if [[ -n "${REVIEW_POSTHOG_KEY:-}" ]]; then
-  node "$APP_DIR/scripts/upload-source-maps.mjs" --out "$CHECKOUT/out-vscode-min"
-fi
-
 for target in "${DARWIN_PAYLOAD_TARGETS[@]}"; do
   if [[ "$target" != "$first_target" ]]; then
     # build.sh above only materialized curated extensions for the first target.

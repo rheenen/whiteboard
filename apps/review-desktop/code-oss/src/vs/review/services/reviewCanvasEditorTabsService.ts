@@ -33,7 +33,6 @@ import { REVIEW_LANGUAGE_SOURCE_SCHEME } from "../common/reviewReadonlySource.js
 import { sourceLocation, sourceSelectionIdentity, REVIEW_API_SOURCE_SCHEME } from "../common/reviewSourceView.js";
 import { reviewRemoteAuthority } from "./remote/reviewRemoteAuthority.js";
 import { IReviewDesktopConnectionService, reviewResponseError } from "./reviewDesktopConnectionService.js";
-import { IReviewTelemetryService } from "./reviewTelemetryService.js";
 
 type NavigatorAnswer = { workspacePath: string; filePath?: string; rootPath?: string } | ReviewRemoteNavigatorAnswer;
 
@@ -86,7 +85,6 @@ export class ReviewCanvasEditorTabsService extends Disposable implements IReview
 		@IFileService private readonly files: IFileService,
 		@IEnvironmentService private readonly environment: IEnvironmentService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IReviewTelemetryService private readonly telemetry: IReviewTelemetryService,
 	) {
 		super();
 		this._register(
@@ -139,7 +137,6 @@ export class ReviewCanvasEditorTabsService extends Disposable implements IReview
 		const result = await this.navigatorWorkspace(selection.reviewId, selection.kind === "version" ? { version: selection.version } : {});
 		const { uri, remote } = navigatorPaths(result);
 		await this.host.openWindow([{ workspaceUri: uri(result.workspacePath), label: title }], { forceNewWindow: true, ...remote });
-		this.telemetry.capture("source_opened", { destination: "source_window", kind: "tree" });
 	}
 
 	/**
@@ -156,14 +153,12 @@ export class ReviewCanvasEditorTabsService extends Disposable implements IReview
 		const selection = !diff ? (editor.options as ITextEditorOptions | undefined)?.selection : undefined;
 		const external = !diff && destinations[0].external ? await this.openExternalEditor(destinations[0], selection) : undefined;
 		if (external) {
-			this.telemetry.capture("source_opened", { destination: external, kind: "file" });
 			return true;
 		}
 		await this.host.openWindow([
 			{ workspaceUri },
 			...destinations.map(({ fileUri }) => ({ fileUri: selection ? fileUri.with({ path: `${fileUri.path}:${selection.startLineNumber}:${selection.startColumn ?? 1}` }) : fileUri })),
 		], { forceNewWindow: true, gotoLineMode: true, diffMode: diff, ...remote });
-		this.telemetry.capture("source_opened", { destination: "source_window", kind: diff ? "diff" : "file" });
 		return true;
 	}
 
@@ -189,7 +184,6 @@ export class ReviewCanvasEditorTabsService extends Disposable implements IReview
 			...remote,
 			reviewReferencesToShow: { resource: fileUri, lineNumber: position.lineNumber, column: position.column },
 		});
-		this.telemetry.capture("source_opened", { destination: "source_window", kind: "references" });
 		return true;
 	}
 

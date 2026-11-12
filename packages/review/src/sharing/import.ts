@@ -1,12 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, realpath, rm } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import { type JsonObject, type JsonValue } from "@dev.fast/review-protocol";
 import {
   type ShareBundle,
-  capabilitySchema,
   repositoryLabel,
   shareBundleSchema,
 } from "@dev.fast/review-share-protocol";
@@ -21,10 +20,7 @@ import {
 } from "@dev.fast/whiteboard-document";
 import type { LocalReviewData } from "@review/review-api/local-data.js";
 import { pullRequestUrl } from "@review/review-api/origin.js";
-import type {
-  ReviewStore,
-  SharedProvenance,
-} from "@review/review-api/store.js";
+import type { ReviewStore } from "@review/review-api/store.js";
 import {
   devReviewHome,
   safeStorageSegment,
@@ -41,8 +37,6 @@ import { referenceCommits, validateShareSources } from "./export.js";
 import {
   COMMIT_ID,
   assertCommitIds,
-  cloneSharedRepository,
-  fetchPinnedRepository,
   fetchSharedCommits,
   repositoryName,
   sharedGit,
@@ -112,11 +106,6 @@ const mapSchema = softwareModelDataSchema.extend({
 export const sharePresentationSchema = z.object({
   maps: z.record(z.string(), mapSchema),
 });
-
-export interface ShareAttribution {
-  login: string;
-  sharedAt: number;
-}
 
 /** Commits live in a checkout; a document alone needs none. A bundle's
  * `traces` are ignored: this build has no trace capture. */
@@ -192,25 +181,10 @@ function liftSharedLenses(stored: JsonObject, migrated: JsonValue): JsonObject {
   };
 }
 
-/** Names a share link: reopening it finds the copy it made. */
-export function shareKey(origin: string, capability: string) {
-  const url = new URL(origin);
-  capabilitySchema.parse(capability);
-
-  return createHash("sha256")
-    .update(JSON.stringify([url.origin, capability]))
-    .digest("hex");
-}
-
 export interface ShareImport {
   store: ReviewStore;
   data: LocalReviewData;
-  fetchRepository?: typeof fetchPinnedRepository;
-  cloneRepository?: typeof cloneSharedRepository;
   onStage?: (stage: "fetching" | "validating") => void;
-  /** A file is opened on a checkout the reader already has, never on a
-   * clone: whoever wrote it chose its remote. */
-  fromFile?: boolean;
   /** A file opened without a checkout: its peeks read the lines the file
    * carries, and its code cannot change. */
   readOnly?: boolean;
@@ -227,110 +201,19 @@ export class MissingCheckoutError extends ReviewInputError {
   }
 }
 
-export const FRESH_IMPORT_VERSION = 0;
-
-/** The revision a link serves and its share's latest. */
-export interface ServedRevision {
-  revision: { id: string; version: number; createdAt: number };
-  latest: string;
-}
-
-export type ShareCopyPlan =
-  | { kind: "open"; reviewId: string }
-  | { kind: "refresh"; reviewId: string; version: number }
-  | { kind: "import" };
-
-/** Which copy a served revision opens or refreshes in place; otherwise a new copy. */
-export function planShareCopy(
-  copies: ReturnType<ReviewStore["copiesOf"]>,
-  served: ServedRevision,
-  pinned = false,
-): ShareCopyPlan {
-  const same = copies.find(({ shared }) =>
-    shared.revisionId === undefined
-      ? shared.sharedAt === served.revision.createdAt
-      : shared.revisionId === served.revision.id,
-  );
-
-  if (same) return { kind: "open", reviewId: same.reviewId };
-
-  const unedited =
-    !pinned &&
-    served.revision.id === served.latest &&
-    copies.find(
-      (copy) =>
-        !copy.shared.pinned &&
-        copy.version === (copy.shared.importedVersion ?? FRESH_IMPORT_VERSION),
-    );
-
-  return unedited
-    ? {
-        kind: "refresh",
-        reviewId: unedited.reviewId,
-        version: unedited.version,
-      }
-    : { kind: "import" };
-}
-
-/** Opens, refreshes or copies a link's board by the revision it serves. */
-export async function receiveShare(
-  input: ShareImport,
-  key: string,
-  served: ServedRevision,
-  download: () => Promise<{
-    bundle: ShareBundle;
-    attribution: ShareAttribution;
-  }>,
-  pinned = false,
-): Promise<string> {
-  const plan = planShareCopy(input.store.copiesOf(key), served, pinned);
-
-  if (plan.kind === "open") return plan.reviewId;
-  const { bundle, attribution } = await download();
-
-  const provenance = {
-    ...attribution,
-    revisionId: served.revision.id,
-    ...(pinned && { pinned }),
-  };
-
-  if (plan.kind === "import")
-    return importShare(input, key, bundle, provenance);
-
-  try {
-    return await importShare(input, key, bundle, provenance, plan);
-  } catch (error) {
-    // The board was edited or deleted since the plan read it.
-    if (
-      error instanceof ReviewInputError &&
-      (error.status === 409 || error.status === 404)
-    )
-      return importShare(input, key, bundle, provenance);
-    throw error;
-  }
-}
-
-/** Imports a share as an ordinary board, or into a copy of its link. */
+/** Imports a `.whiteboard` file's bundle as an ordinary board. A file is
+ * opened on a checkout the reader already has, never on a clone: whoever
+ * wrote it chose its remote. */
 export async function importShare(
   input: ShareImport,
   key: string,
   received: ShareBundle,
-  provenance?: ShareAttribution &
-    Pick<SharedProvenance, "revisionId" | "pinned">,
-  into?: { reviewId: string; version: number },
 ): Promise<string> {
   const { store, data } = input;
   const { bundle, snapshot, maps } = validateShareBundle(received);
-  const cloneUrl = bundle.repository?.cloneUrl;
-  const remote = cloneUrl ?? bundle.remote?.url;
+  const remote = bundle.repository?.cloneUrl ?? bundle.remote?.url;
   const needed = needsRepository(bundle, snapshot);
   let repositoryId: string | undefined;
-
-  if (needed && !remote && !input.fromFile)
-    throw new ReviewInputError(
-      "This share can only be viewed in the browser.",
-      409,
-    );
 
   if (input.readOnly && needed)
     repositoryId = await readOnlyRepository(input, key, remote, bundle);
@@ -340,7 +223,7 @@ export async function importShare(
     input.onStage?.("fetching");
     repositoryId = await shareRepository(
       input,
-      { cloneUrl, remote },
+      remote,
       snapshot.pins,
       referenceCommits(snapshot),
       key,
@@ -404,13 +287,11 @@ export async function importShare(
     document: JSON.parse(document),
     lenses: snapshot.lenses,
     origin: snapshot.origin,
-    shared: { ...provenance, ...(remote && { cloneUrl: remote }), key },
+    shared: { ...(remote && { cloneUrl: remote }), key },
     copiedFrom: snapshot.reviewId,
   };
 
-  const { reviewId } = into
-    ? await store.refreshCopy(into.reviewId, into.version, create, seed)
-    : await store.execute(create, seed, { kind: "person" });
+  const { reviewId } = await store.execute(create, seed, { kind: "person" });
 
   return reviewId;
 }
@@ -427,13 +308,12 @@ async function holdsCommits(root: string, commits: readonly string[]) {
   }
 }
 
-/** A checkout of the share's repository with every commit it reads at: the
- * receiver's own when they have one. Otherwise a file opens on a checkout
- * that already holds every commit, and a link's GitHub repository is cloned
- * by Desktop. */
+/** A checkout of the file's repository with every commit it reads at: the
+ * receiver's own when they have one, else a checkout that already holds
+ * every commit. */
 async function shareRepository(
   input: ShareImport,
-  { cloneUrl, remote }: { cloneUrl?: string; remote?: string },
+  remote: string | undefined,
   pins: Pick<Pins, "base" | "head"> | undefined,
   commits: string[],
   key: string,
@@ -442,26 +322,14 @@ async function shareRepository(
   const all = [...(pins ? [pins.base, pins.head] : []), ...commits];
 
   const matches = remote ? store.checkoutsOfRemote(remote) : [];
-  const shared = await realpath(sharedRoot()).catch(() => sharedRoot());
+  let repositoryId = matches[0];
 
-  const managed = (id: string) =>
-    store.repositoryPath(id).startsWith(shared + path.sep);
-
-  // A link prefers the receiver's own checkout over Desktop's clone; a file
-  // takes either.
-  let repositoryId =
-    matches.find((id) => !managed(id)) ??
-    (input.fromFile ? matches[0] : undefined);
-
-  if (!repositoryId && input.fromFile && all.length)
+  if (!repositoryId && all.length)
     for (const { id, path: root } of store.repositories())
       if (existsSync(root) && (await holdsCommits(root, all))) {
         repositoryId = id;
         break;
       }
-
-  if (!repositoryId && cloneUrl && !input.fromFile)
-    repositoryId = await managedRepository(input, cloneUrl, pins, commits);
 
   if (!repositoryId)
     throw new MissingCheckoutError(
@@ -476,8 +344,6 @@ async function shareRepository(
 
   return repositoryId;
 }
-
-const sharedRoot = () => path.join(devReviewHome(), "shared-repositories");
 
 /** A stand-in for the checkout of a file opened read-only: an empty folder
  * named after the repository, and the lines the file carries. */
@@ -503,57 +369,4 @@ async function readOnlyRepository(
   store.excerpts.put(id, bundle.sources);
 
   return id;
-}
-
-/** Desktop's clone of a link's GitHub repository. */
-async function managedRepository(
-  { store, data, ...git }: ShareImport,
-  cloneUrl: string,
-  pins: Pick<Pins, "base" | "head"> | undefined,
-  commits: string[],
-) {
-  const root = sharedRoot();
-
-  await mkdir(root, { recursive: true, mode: 0o700 });
-
-  const name = cloneUrl
-    .replace(/\/+$/, "")
-    .replace(/\.git$/, "")
-    .split("/")
-    .at(-1);
-
-  const managed = path.join(
-    await realpath(root),
-    `${safeStorageSegment(name || "repository")}-${createHash("sha256").update(cloneUrl).digest("hex").slice(0, 8)}`,
-  );
-
-  const cloned = store
-    .repositories()
-    .find((repository) => repository.path === managed);
-
-  if (!(cloned && existsSync(path.join(managed, ".git")))) {
-    await rm(managed, { recursive: true, force: true });
-
-    try {
-      if (pins) {
-        await (git.fetchRepository ?? fetchPinnedRepository)(
-          managed,
-          cloneUrl,
-          pins,
-          commits,
-        );
-        await sharedGit(managed, [
-          "checkout",
-          "--detach",
-          { commit: pins.head },
-        ]);
-      } else
-        await (git.cloneRepository ?? cloneSharedRepository)(managed, cloneUrl);
-    } catch (error) {
-      await rm(managed, { recursive: true, force: true });
-      throw error;
-    }
-  }
-
-  return cloned?.id ?? (await data.register(managed)).id;
 }

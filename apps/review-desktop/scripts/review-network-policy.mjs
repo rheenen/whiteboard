@@ -1,8 +1,10 @@
-// This is a blocklist, not an allowlist. `update.dev.fast` and `open-vsx.org`
-// are sanctioned hosts and must stay reachable. Do not add them here when
-// tightening this policy.
+// This is a blocklist, not an allowlist. `open-vsx.org` is a sanctioned host
+// and must stay reachable. Do not add it here when tightening this policy.
+// This build talks to no dev.fast service: no sign-in, sharing, reports,
+// feedback, usage data, update feed or remote downloads.
 const BLOCKED_HOSTS = new Set([
   "aka.ms",
+  "dev.fast",
   "marketplace.visualstudio.com",
   "update.code.visualstudio.com",
   "vscode.blob.core.windows.net",
@@ -10,6 +12,7 @@ const BLOCKED_HOSTS = new Set([
 ]);
 
 const BLOCKED_HOST_SUFFIXES = [
+  ".dev.fast",
   ".data.microsoft.com",
   ".mai.microsoft.com",
   ".vsassets.io",

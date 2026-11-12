@@ -15,14 +15,7 @@ import {
 import type { Snapshot } from "@review/review-api/store";
 import * as stylex from "@stylexjs/stylex";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import {
-  type ComponentProps,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { type ApiDocumentData, createDocumentLoader } from "./api-document";
 import { SaveMarkdown } from "./blocks";
@@ -38,13 +31,12 @@ import {
   useCanvasQueryScope,
 } from "./canvas-query";
 import { ConnectionContext, HostWaiting } from "./connection-chip";
+import { ExportContext } from "./export-context";
 import { hostApiClient, useReviewSession } from "./host/review-session";
 import { useBoardPlace } from "./review-doc-meta";
 import type { ReviewTocEntry } from "./review-document-headings";
 import type { ReviewFindHost } from "./review-find";
 import { useReviewStack } from "./review-stack-selector";
-import { SharingContext } from "./share-control";
-import { useSharingAccount } from "./sharing-account";
 import { tokens } from "./tokens.stylex";
 import { Button } from "./ui/button";
 import {
@@ -369,17 +361,12 @@ export function ApiCanvas({
     if (data) setPainted(true);
   }, [Boolean(data)]);
 
-  const sharing = useMemo(
+  const exportable = useMemo(
     () =>
       data && !data.snapshot.trashedAt && !data.snapshot.sourceUnavailable
-        ? {
-            client,
-            reviewId: content.reviewId,
-            version: data.snapshot.version,
-            sender: data.snapshot.shared?.login,
-          }
+        ? { reviewId: content.reviewId, version: data.snapshot.version }
         : null,
-    [client, content.reviewId, data],
+    [content.reviewId, data],
   );
 
   const trashBanner = trashedAt && (
@@ -496,7 +483,7 @@ export function ApiCanvas({
     <div {...stylex.props(styles.canvasSurface)}>
       <CanvasQueryProvider scope={queries}>
         <SharedCanvasQueryClient.Provider value={queries.queryClient}>
-          <SharingProvider value={sharing}>
+          <ExportContext.Provider value={exportable}>
             <ConnectionContext.Provider value={connection}>
               <SaveMarkdown.Provider value={saveMarkdown}>
                 <BoardPaintedContext.Provider value={painted}>
@@ -527,31 +514,10 @@ export function ApiCanvas({
                 </BoardPaintedContext.Provider>
               </SaveMarkdown.Provider>
             </ConnectionContext.Provider>
-          </SharingProvider>
+          </ExportContext.Provider>
         </SharedCanvasQueryClient.Provider>
       </CanvasQueryProvider>
     </div>
-  );
-}
-
-/** Withholds share links when the installation turned sharing off. */
-function SharingProvider({
-  value,
-  children,
-}: {
-  value: ComponentProps<typeof SharingContext.Provider>["value"];
-  children: ReactNode;
-}) {
-  const disabled =
-    useSharingAccount(value?.client, value !== null).data?.disabled === true;
-
-  const shared = useMemo(
-    () => (disabled && value ? { ...value, linksDisabled: true } : value),
-    [disabled, value],
-  );
-
-  return (
-    <SharingContext.Provider value={shared}>{children}</SharingContext.Provider>
   );
 }
 

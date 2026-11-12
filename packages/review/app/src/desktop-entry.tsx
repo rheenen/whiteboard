@@ -34,7 +34,6 @@ import {
   createCanvasQueryClient,
 } from "./canvas-query";
 import { type DiffFilePicker, DiffFilePickerContext } from "./diff-file-picker";
-import { FeedbackDialog } from "./feedback-dialog";
 import { CanvasUiContext } from "./host/canvas-ui";
 import { loadKatex } from "./markdown-math";
 import { FirstRun, readOnboardingSkipped } from "./onboarding/first-run";
@@ -225,7 +224,6 @@ function Home({
     return (
       <NewWhiteboard
         setupActions={setupActions}
-        via={creating.via}
         projectPath={creating.projectPath}
         onCreate={createWhiteboard}
         onClose={() => setCreating(undefined)}
@@ -407,7 +405,6 @@ export function mountReviewCanvas(
   ui?: ReviewCanvasUi,
 ): ReviewCanvasHandle {
   let content = initialContent;
-  let feedbackOpen = false;
 
   let disposed = false;
   let themeSubscription: { dispose(): void } | null = null;
@@ -437,15 +434,6 @@ export function mountReviewCanvas(
               <ReviewCanvas content={content} findHost={findHost} />
             </SharedCanvasQueryClient.Provider>
             {ui?.update && <UpdateChip host={ui.update} />}
-            {feedbackOpen && ui?.feedback && (
-              <FeedbackDialog
-                host={ui.feedback}
-                onClose={() => {
-                  feedbackOpen = false;
-                  render();
-                }}
-              />
-            )}
           </DiffFilePickerContext.Provider>
         </CanvasUiContext.Provider>
       </ReviewContainerProvider>,
@@ -486,11 +474,6 @@ export function mountReviewCanvas(
     },
     revealDiffFile(path) {
       diffFilePicker.current?.reveal(path);
-    },
-    showFeedback() {
-      if (disposed || !ui?.feedback) return;
-      feedbackOpen = true;
-      render();
     },
     dispose() {
       if (disposed) return;

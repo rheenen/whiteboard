@@ -10,7 +10,6 @@ import {
 
 import { useReviewSession } from "./host/review-session";
 import { useOptionalReviewPanelStore } from "./review-panel";
-import { captureUiEvent } from "./ui-telemetry";
 
 export type ReviewSubmissionOutcome = "dismissed";
 
@@ -65,7 +64,6 @@ export function ReviewProvider({
 
   const dismissReview = useCallback(async () => {
     if (!(await review.dismiss())) return;
-    captureUiEvent(session, "review_dismissed", { via: "review_topbar" });
     setSubmissionOutcome("dismissed");
   }, [review, session]);
 

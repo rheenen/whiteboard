@@ -1,27 +1,5 @@
-// General utilities shared by the Whiteboard CLI and server, the hosted
-// service login, and the cleanup of earlier builds' trace hooks.
-
-export {
-  DEFAULT_STORE_ORIGIN,
-  readStoreAuth,
-  clearStoreAuth,
-  runStoreLogin,
-  openUrlInBrowser,
-  runStoreLogout,
-  runStoreWhoami,
-  writeStoreAuth,
-} from "./store-auth";
-
-export {
-  HostedStoreDisabledError,
-  hostedStoreDisabled,
-  SHARING_DISABLED_ENV,
-  SHARING_DISABLED_MARKER,
-  sharingMarkerPath,
-  writeSharingMarker,
-  StoreApiError,
-  StoreClient,
-} from "./store-client";
+// General utilities shared by the Whiteboard CLI and server, and the cleanup
+// of earlier builds' trace hooks.
 
 export { shellQuote } from "./trace-command";
 
@@ -32,7 +10,6 @@ export {
   type CliJsonEvent,
   type CliJsonOutput,
   emitJsonEvent,
-  failWithJsonError,
   humanStream,
 } from "./cli-output";
 
@@ -55,8 +32,6 @@ export {
 } from "./atomic-write";
 
 export { errorMessage } from "./error-message";
-
-export { normalizeStoreOrigin } from "./store-origin";
 
 export {
   type LegacyTraceHookRemoval,

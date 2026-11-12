@@ -65,7 +65,6 @@ import {
 } from "./sequence-layout";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { captureUiEvent } from "./ui-telemetry";
 import { useDiagramSelection } from "./use-diagram-selection";
 
 type SequenceParticipantNodeData = {
@@ -331,7 +330,6 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
   const openTour = useCallback(
     (anchor?: string) => {
       if (anchor) {
-        captureUiEvent(session, "peek_opened", { via: "diagram" });
         offerComment(anchor);
       }
 
@@ -340,10 +338,6 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
       const nextAnchor = anchor ?? tourAnchor ?? tour.stops[0]?.anchor.id;
 
       if (!nextAnchor) return;
-
-      if (!tourOpen) {
-        captureUiEvent(session, "tour_started", { steps: tour.stops.length });
-      }
 
       panelStore
         .getState()

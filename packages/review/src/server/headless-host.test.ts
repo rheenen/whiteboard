@@ -48,7 +48,6 @@ import {
   reviewManagedCheckoutRoot,
 } from "@review/review-checkout-paths.js";
 import { writeAnimationsEnabled } from "@review/review-preferences.js";
-import { ReviewTelemetry } from "@review/review-telemetry.js";
 import {
   type ReviewServerDiscovery,
   headlessServerLockPath,
@@ -70,7 +69,6 @@ const stops: (() => Promise<void>)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-headless-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
   vi.stubEnv("SHELL", "");
 });
 
@@ -963,7 +961,6 @@ it.each(["attached", "not yet attached"])(
       packageRoot: root,
       toolingRoot: root,
       port: 0,
-      telemetry: ReviewTelemetry.fromEnv(process.env),
     });
 
     stops.push(async () => {

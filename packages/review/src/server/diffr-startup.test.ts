@@ -26,7 +26,6 @@ test.each(["desktop", "headless"] as const)(
     roots.push(root);
     vi.stubEnv("DEV_REVIEW_HOME", root);
     vi.stubEnv("XDG_CONFIG_HOME", root);
-    vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
     const file = path.join(root, "diffr", "config.toml");
     await mkdir(path.dirname(file));
 

@@ -35,7 +35,6 @@ function sourceResolver(t: TestContext, options: { openFilesIn?: string; applica
 		{} as never,
 		{} as never,
 		{ getValue: (key: string) => ({ "review.openFilesIn": options.openFilesIn, "review.openFilesInApplication": options.application })[key] } as never,
-		{ capture() {} } as never,
 	);
 	const resolver = new ReviewEditorResolverService(
 		{ get activeGroup() { throw new Error("Review must not create an editor group"); } } as never,

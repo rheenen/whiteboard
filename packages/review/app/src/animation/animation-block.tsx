@@ -24,7 +24,6 @@ import { shellStyles } from "@canvas/shell-styles";
 import { withClass } from "@canvas/stylex-props";
 import { themeClass, themeStyles } from "@canvas/theme-styles";
 import { tokens } from "@canvas/tokens.stylex";
-import { captureUiEvent } from "@canvas/ui-telemetry";
 import { Button } from "@canvas/ui/button";
 import { focusStyles } from "@canvas/ui/focus";
 import { SegmentedControl } from "@canvas/ui/segmented";
@@ -440,8 +439,6 @@ function StageBlock({
     if (!tour || !frameAnchor) return;
 
     if (!tourOpen) {
-      captureUiEvent(session, "tour_started", { steps: tour.stops.length });
-
       if (!expanded) holdInline();
     }
 
@@ -457,7 +454,6 @@ function StageBlock({
     const anchor = data.anchors.get(animationCodeId(node.id, name));
 
     if (!anchor) return;
-    captureUiEvent(session, "peek_opened", { via: "diagram" });
     const { openPeek, moveOverlayTour, active } = panelStore.getState();
 
     const tourStop = tour?.stops.find((item) => item.anchor.id === frameAnchor);

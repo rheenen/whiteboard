@@ -3,8 +3,7 @@
 // imports as vs/review/common/reviewProtocol.ts. The overlay is every
 // top-level statement of the protocol modules except import and re-export
 // statements, behind one zod/v4 import configured for the Trusted Types CSP
-// before any schema is built. bug-report.ts is deliberately not part of the
-// overlay.
+// before any schema is built.
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";

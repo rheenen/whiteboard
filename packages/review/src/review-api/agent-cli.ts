@@ -5,10 +5,6 @@ import {
   selectReviewInstance,
 } from "@review/desktop-discovery.js";
 import { devReviewHome } from "@review/review-home-paths.js";
-import {
-  type ReviewToolCall,
-  reviewSessionAgent,
-} from "@review/review-telemetry.js";
 
 import {
   type AuthoringTool,
@@ -19,13 +15,7 @@ import { type ReviewApiClient, ReviewApiError } from "./client.js";
 import { exitOnInstallUpdate } from "./install-update.js";
 import { callPublicTool, publicTool, renderedImage } from "./public-tools.js";
 import { RECOVERY } from "./recovery.js";
-import {
-  ASK_THREAD_ENV,
-  REVIEW_AGENT_HEADER,
-  REVIEW_THREAD_HEADER,
-  REVIEW_VIA_HEADER,
-} from "./request-origin.js";
-import { toolFailure } from "./tool-failure.js";
+import { ASK_THREAD_ENV, REVIEW_THREAD_HEADER } from "./request-origin.js";
 
 interface AgentCliInput {
   argv: string[];
@@ -33,12 +23,6 @@ interface AgentCliInput {
   stdin?: Readable;
   stdout: Writable;
   stderr: Writable;
-  /** Awaited on the api path: the process exits right after the call. */
-  onToolCall?: (call: ReviewToolCall) => Promise<void> | void;
-  /** Receives the failure so the parent CLI can classify its terminal event. */
-  onFailure?: (error: Error) => void;
-  /** Receives the release of each Desktop reached, for telemetry. */
-  onDesktop?: (appVersion: string | undefined) => void;
 }
 
 export const reviewAgentCliHelp =
@@ -70,28 +54,17 @@ export async function runReviewAgentCli(input: AgentCliInput): Promise<number> {
 
     const thread = env[ASK_THREAD_ENV]?.trim();
 
-    const headers = Object.fromEntries([
-      [REVIEW_VIA_HEADER, mode === "mcp" ? "mcp" : "api"],
-      [REVIEW_AGENT_HEADER, reviewSessionAgent(env)],
-      [REVIEW_THREAD_HEADER, thread ?? ""],
-    ]);
+    const headers = { [REVIEW_THREAD_HEADER]: thread ?? "" };
 
     if (mode === "mcp") {
       const { serveReviewMcp } = await import("./mcp.js");
       exitOnInstallUpdate(input.stderr);
       await serveReviewMcp(
-        async (key, agentKind) => {
-          const connected = await connectReviewInstance(
+        (key) =>
+          connectReviewInstance(
             key ? { ...env, [REVIEW_INSTANCE_ENV]: key } : env,
-            agentKind
-              ? { ...headers, [REVIEW_AGENT_HEADER]: agentKind }
-              : headers,
-          );
-
-          input.onDesktop?.(connected.instance?.appVersion);
-
-          return connected;
-        },
+            headers,
+          ),
         input.stdin ?? process.stdin,
         input.stdout,
         input.stderr,
@@ -111,8 +84,6 @@ export async function runReviewAgentCli(input: AgentCliInput): Promise<number> {
                 problem,
               };
             },
-        input.onToolCall,
-        reviewSessionAgent(env),
       );
 
       return 0;
@@ -124,7 +95,6 @@ export async function runReviewAgentCli(input: AgentCliInput): Promise<number> {
     try {
       const connected = await connectReviewInstance(input.env, headers);
 
-      input.onDesktop?.(connected.instance?.appVersion);
       client = connected.client;
       tools = (await client.read<AuthoringTool[]>("/authoring")).map(
         publicTool,
@@ -186,29 +156,7 @@ export async function runReviewAgentCli(input: AgentCliInput): Promise<number> {
       throw new Error("Tool input must be a JSON object.");
 
     if (name === "session_get" && rest.includes("--json")) args.format = "json";
-    const startedAt = Date.now();
-    let result: Awaited<ReturnType<typeof callPublicTool>>;
-
-    try {
-      result = await callPublicTool(client, tool, args);
-    } catch (error) {
-      await input.onToolCall?.({
-        tool: tool.name,
-        via: "api",
-        ok: false,
-        durationMs: Date.now() - startedAt,
-        ...toolFailure(error, "call"),
-      });
-
-      throw error;
-    }
-
-    await input.onToolCall?.({
-      tool: tool.name,
-      via: "api",
-      ok: true,
-      durationMs: Date.now() - startedAt,
-    });
+    const result = await callPublicTool(client, tool, args);
 
     // A rendered frame is read from its file; its bytes stay out of stdout.
     const text = toolResultText(tool, renderedImage(tool, result).result);
@@ -218,7 +166,6 @@ export async function runReviewAgentCli(input: AgentCliInput): Promise<number> {
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
 
-    input.onFailure?.(failure);
     input.stderr.write(failure.message + "\n");
 
     return 1;

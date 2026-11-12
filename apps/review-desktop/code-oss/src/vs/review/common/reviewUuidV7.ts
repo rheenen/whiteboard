@@ -5,8 +5,7 @@
 
 /**
  * RFC 9562 UUIDv7: a 48-bit big-endian millisecond timestamp, version 7,
- * variant 10xx, and 74 random bits. PostHog keys sessions on `$session_id`
- * and accepts only this version.
+ * variant 10xx, and 74 random bits, so ids sort by the time they were made.
  */
 export function uuidV7(now: number = Date.now(), random: Uint8Array = globalThis.crypto.getRandomValues(new Uint8Array(16))): string {
 	const bytes = Uint8Array.from(random.subarray(0, 16));

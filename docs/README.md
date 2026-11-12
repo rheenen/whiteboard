@@ -1,7 +1,5 @@
 # Whiteboard docs
 
-Published at [dev.fast/docs](https://dev.fast/docs).
-
 - [Quick start](quick-start.md)
 - [Connect your agent](connect-your-agent.md)
 - [Create a review](create-a-review.md)
@@ -10,4 +8,3 @@ Published at [dev.fast/docs](https://dev.fast/docs).
 - [Configuration](configuration.md)
 - [diffr configuration](diffr-configuration.md)
 - [Privacy](privacy.md)
-- [Telemetry](telemetry.md)

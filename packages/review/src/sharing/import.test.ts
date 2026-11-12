@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,13 +13,10 @@ import { createShareFixture } from "../../test/fixtures/share/create.js";
 import { exportShare } from "./export.js";
 import {
   importShare,
-  planShareCopy,
-  receiveShare,
-  shareKey,
   sharePresentationSchema,
   sharedSnapshotSchema,
 } from "./import.js";
-import { fetchPinnedRepository, sharedProtocols } from "./repository.js";
+import { sharedProtocols } from "./repository.js";
 
 // The fixtures fetch from local paths.
 sharedProtocols.add("file");
@@ -32,18 +29,8 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-const key = () =>
-  shareKey("https://app.dev.fast", randomBytes(32).toString("base64url"));
-
-const [R1old, R1, R2, R3] = ["r0", "r1", "r2", "r3"];
-
-const served = (id: string, latest: string) => ({
-  revision: { id, version: 1, createdAt: 1 },
-  latest,
-});
-
-/** A sender's share, with a block pinned to commits of its own, and a
- * recipient with an empty store. */
+/** A sender's exported board, with a block pinned to commits of its own,
+ * and a recipient whose checkout of the repository holds only its base. */
 async function share() {
   const root = await mkdtemp(path.join(tmpdir(), "share-copy-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -85,54 +72,50 @@ async function share() {
   cleanup.push(() => recipient.store.close());
   cleanup.push(() => recipient.data.close());
 
-  const fetchRepository = vi.fn<typeof fetchPinnedRepository>(
-    (target, _url, ...rest) =>
-      fetchPinnedRepository(target, sender.repo, ...rest),
-  );
+  const checkout = path.join(root, "recipient-checkout");
+  await mkdir(checkout);
 
-  return { root, sender, other, pins, bundle, recipient, fetchRepository };
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: checkout, encoding: "utf8" }).trim();
+
+  // Git reaches "GitHub" through the sender's repository.
+  vi.stubEnv("HOME", root);
+  await writeFile(
+    path.join(root, ".gitconfig"),
+    `[url "${sender.repo}"]\n\tinsteadOf = ${sender.repository.cloneUrl}\n`,
+  );
+  git("init", "-q");
+  git("remote", "add", "origin", sender.repository.cloneUrl);
+  git("fetch", "-q", "origin", pins.base);
+  git("checkout", "-q", "--detach", "FETCH_HEAD");
+  const own = await recipient.data.register(checkout);
+
+  return { sender, other, pins, bundle, recipient, own, git };
 }
 
-it("copies a share into a board the recipient edits like their own", async () => {
-  const { sender, other, pins, bundle, recipient, fetchRepository } =
-    await share();
+it("copies a file's board into a board the recipient edits like their own", async () => {
+  const { sender, other, pins, bundle, recipient, own } = await share();
+  const key = randomUUID();
 
-  const link = key();
-
-  const reviewId = await importShare(
-    { ...recipient, fetchRepository },
-    link,
-    bundle,
-    { login: "ada", sharedAt: 1, revisionId: R1 },
-  );
+  const reviewId = await importShare(recipient, key, bundle);
 
   await rename(sender.repo, `${sender.repo}-gone`);
-  expect(fetchRepository).toHaveBeenCalledWith(
-    expect.any(String),
-    sender.repository.cloneUrl,
-    expect.objectContaining({ base: pins.base, head: pins.head }),
-    [],
-  );
 
   const copy = recipient.store.read(reviewId);
-  const { repositoryId } = copy.pins!;
 
   expect(copy.shared).toEqual({
-    login: "ada",
-    sharedAt: 1,
     cloneUrl: sender.repository.cloneUrl,
-    key: link,
-    revisionId: R1,
+    key,
     importedVersion: 0,
   });
-  expect(repositoryId).not.toBe(pins.repositoryId);
+  expect(copy.pins!.repositoryId).toBe(own.id);
   expect(JSON.stringify(copy.document)).not.toContain(pins.repositoryId);
   expect(
     copy.document.find(
       (block): block is Extract<Block, { type: "code_peek" }> =>
         block.type === "code_peek" && block.pins !== undefined,
     )?.pins,
-  ).toEqual({ repositoryId, head: pins.base });
+  ).toEqual({ repositoryId: own.id, head: pins.base });
   expect(JSON.stringify(copy.document)).toContain(
     `[Here](whiteboard:board/${reviewId}) and [there](whiteboard:board/${other}).`,
   );
@@ -165,277 +148,14 @@ it("copies a share into a board the recipient edits like their own", async () =>
   expect(recipient.store.read(reviewId).title).toBe("Mine now");
 });
 
-it("matches a legacy copy by its share time and refreshes it only while unedited", () => {
-  const legacy = (version: number, sharedAt?: number) => [
-    { reviewId: "l", version, shared: { key: "k", sharedAt } },
-  ];
-
-  expect(planShareCopy(legacy(0), served(R2, R2))).toEqual({
-    kind: "refresh",
-    reviewId: "l",
-    version: 0,
-  });
-  expect(planShareCopy(legacy(1), served(R2, R2))).toEqual({ kind: "import" });
-  expect(planShareCopy(legacy(1, 1), served(R1old, R2))).toEqual({
-    kind: "open",
-    reviewId: "l",
-  });
-});
-
-it("reopens, refreshes in place from Trash, and copies beside an edited board", async () => {
-  const { bundle, recipient, fetchRepository } = await share();
-  const input = { ...recipient, fetchRepository };
-  const link = key();
-
-  const download = vi.fn<Parameters<typeof receiveShare>[3]>(async () => ({
-    bundle,
-    attribution: { login: "ada", sharedAt: 1 },
-  }));
-
-  const a = await receiveShare(input, link, served(R1, R1), download);
-
-  expect(await receiveShare(input, link, served(R1, R1), download)).toBe(a);
-  expect(download).toHaveBeenCalledTimes(1);
-
-  await recipient.store.execute(
-    { operation: { type: "lifecycle", state: "trash", reviewId: a } },
-    undefined,
-    { kind: "person" },
-  );
-
-  expect(await receiveShare(input, link, served(R2, R2), download)).toBe(a);
-  expect(recipient.store.read(a)).toMatchObject({
-    version: 1,
-    trashedAt: expect.any(String),
-    shared: { revisionId: R2, importedVersion: 1 },
-  });
-
-  await recipient.store.execute(
-    { operation: { type: "lifecycle", state: "active", reviewId: a } },
-    undefined,
-    { kind: "person" },
-  );
-  await recipient.store.execute(
-    {
-      operation: {
-        type: "edit",
-        reviewId: a,
-        edit: {
-          type: "insert",
-          content: { type: "markdown", markdown: "Mine" },
-        },
-      },
-    },
-    undefined,
-    { kind: "person" },
-  );
-
-  const b = await receiveShare(input, link, served(R3, R3), download);
-
-  expect(b).not.toBe(a);
-  expect(recipient.store.copiesOf(link).map((x) => x.reviewId)).toEqual([b, a]);
-
-  const other = await receiveShare(input, key(), served(R1, R1), download);
-
-  expect(recipient.store.read(other).pins!.repositoryId).toBe(
-    recipient.store.read(a).pins!.repositoryId,
-  );
-  expect(fetchRepository).toHaveBeenCalledTimes(1);
-});
-
-it("keeps a revision link's copy pinned, apart from the live copy's refreshes", async () => {
-  const { bundle, recipient, fetchRepository } = await share();
-  const input = { ...recipient, fetchRepository };
-  const link = key();
-
-  const download = async () => ({
-    bundle,
-    attribution: { login: "ada", sharedAt: 1 },
-  });
-
-  const a = await receiveShare(input, link, served(R1, R1), download);
-
-  const pinned = await receiveShare(
-    input,
-    link,
-    served(R2, R2),
-    download,
-    true,
-  );
-
-  expect(pinned).not.toBe(a);
-  expect(recipient.store.read(pinned).shared).toMatchObject({
-    revisionId: R2,
-    pinned: true,
-  });
-  expect(recipient.store.read(a).shared).toMatchObject({ revisionId: R1 });
-
-  expect(await receiveShare(input, link, served(R3, R3), download)).toBe(a);
-  expect(recipient.store.read(a).shared).toMatchObject({ revisionId: R3 });
-  expect(recipient.store.read(pinned).shared).toMatchObject({
-    revisionId: R2,
-  });
-});
-
-it("copies beside a board edited or deleted while its refresh downloads", async () => {
-  const { bundle, recipient, fetchRepository } = await share();
-  const input = { ...recipient, fetchRepository };
-  const app = createReviewApi(recipient.store, recipient.data);
-  const link = key();
-  let during = async () => {};
-
-  const download = async () => {
-    await during();
-
-    return { bundle, attribution: { login: "ada", sharedAt: 1 } };
-  };
-
-  const a = await receiveShare(input, link, served(R1, R1), download);
-
-  during = async () => {
-    await recipient.store.execute(
-      {
-        operation: {
-          type: "edit",
-          reviewId: a,
-          edit: {
-            type: "insert",
-            content: { type: "markdown", markdown: "Mine" },
-          },
-        },
-      },
-      undefined,
-      { kind: "person" },
-    );
-  };
-
-  const edited = recipient.store.read(a);
-  const b = await receiveShare(input, link, served(R2, R2), download);
-  const after = recipient.store.read(a);
-
-  expect(b).not.toBe(a);
-  expect(after.version).toBe(edited.version + 1);
-  expect(after.shared).toMatchObject({ revisionId: R1 });
-  expect(JSON.stringify(after.document)).toContain("Mine");
-
-  during = async () => {
-    await recipient.store.execute(
-      { operation: { type: "lifecycle", state: "trash", reviewId: b } },
-      undefined,
-      { kind: "person" },
-    );
-
-    const response = await app.request("/commands", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ operation: { type: "delete", reviewId: b } }),
-    });
-
-    expect(response.status).toBe(200);
-  };
-
-  const c = await receiveShare(input, link, served(R3, R3), download);
-
-  expect([a, b]).not.toContain(c);
-  expect(recipient.store.read(c).shared).toMatchObject({ revisionId: R3 });
-  expect(recipient.store.copiesOf(link).map((x) => x.reviewId)).toEqual([c, a]);
-});
-
-it("keeps a share's commits until its link's last copy is deleted", async () => {
-  const { bundle, recipient, fetchRepository, pins } = await share();
-  const input = { ...recipient, fetchRepository };
-  const link = key();
-
-  const download = async () => ({
-    bundle,
-    attribution: { login: "ada", sharedAt: 1 },
-  });
-
-  const a = await receiveShare(input, link, served(R1, R1), download);
-
-  await recipient.store.execute(
-    {
-      operation: {
-        type: "edit",
-        reviewId: a,
-        edit: {
-          type: "insert",
-          content: { type: "markdown", markdown: "Mine" },
-        },
-      },
-    },
-    undefined,
-    { kind: "person" },
-  );
-
-  const b = await receiveShare(input, link, served(R2, R2), download);
-
-  const root = recipient.store.repositoryPath(
-    recipient.store.read(a).pins!.repositoryId,
-  );
-
-  const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-
-  const app = createReviewApi(recipient.store, recipient.data);
-
-  const remove = async (reviewId: string) => {
-    await recipient.store.execute(
-      { operation: { type: "lifecycle", state: "trash", reviewId } },
-      undefined,
-      { kind: "person" },
-    );
-
-    const response = await app.request("/commands", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ operation: { type: "delete", reviewId } }),
-    });
-
-    expect(response.status).toBe(200);
-  };
-
-  await remove(a);
-  expect(git("rev-parse", `refs/review/shared/${link}/${pins.head}`)).toBe(
-    pins.head,
-  );
-
-  await remove(b);
-  expect(git("for-each-ref", `refs/review/shared/${link}`)).toBe("");
-});
-
 it("fetches the shared commits into the recipient's own checkout", async () => {
-  const { root, sender, pins, bundle, recipient, fetchRepository } =
-    await share();
+  const { pins, bundle, recipient, own, git } = await share();
+  const key = randomUUID();
 
-  const checkout = path.join(root, "recipient-checkout");
-  await mkdir(checkout);
+  const reviewId = await importShare(recipient, key, bundle);
 
-  const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd: checkout, encoding: "utf8" }).trim();
-
-  // Git reaches "GitHub" through the sender's repository.
-  vi.stubEnv("HOME", root);
-  await writeFile(
-    path.join(root, ".gitconfig"),
-    `[url "${sender.repo}"]\n\tinsteadOf = ${sender.repository.cloneUrl}\n`,
-  );
-  git("init", "-q");
-  git("remote", "add", "origin", sender.repository.cloneUrl);
-  git("fetch", "-q", "origin", pins.base);
-  git("checkout", "-q", "--detach", "FETCH_HEAD");
-  const own = await recipient.data.register(checkout);
-  const link = key();
-
-  const reviewId = await importShare(
-    { ...recipient, fetchRepository },
-    link,
-    bundle,
-  );
-
-  expect(fetchRepository).not.toHaveBeenCalled();
   expect(recipient.store.read(reviewId).pins!.repositoryId).toBe(own.id);
-  expect(git("rev-parse", `refs/review/shared/${link}/${pins.head}`)).toBe(
+  expect(git("rev-parse", `refs/review/shared/${key}/${pins.head}`)).toBe(
     pins.head,
   );
 });

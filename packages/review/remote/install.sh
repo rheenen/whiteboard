@@ -1,7 +1,8 @@
 #!/bin/sh
-# Installs Whiteboard on a Linux host. Desktop pipes this file over ssh; releases publish it
-# beside their tarballs for hand installs:
-#   curl -fsSL https://install.dev.fast/releases/<version>/remote/install.sh | sh -s -- --version <version>
+# Installs Whiteboard on a Linux host. Desktop pipes this file over ssh; a release base you
+# host (built with build-remote-tarball.mjs) serves it beside the tarballs for hand installs:
+#   curl -fsSL <base>/<version>/remote/install.sh | WHITEBOARD_RELEASES=<base> sh -s -- --version <version>
+# There is no default release base: a hand install without WHITEBOARD_RELEASES fails.
 #
 #   install --version V [--sha256 H (--url U | --file F)] [--downloader curl|wget] [--owner NAME] [--token HEX]
 #           [--lock-wait S] [--lock-poll S] [--lock-stale S]   (the default command)
@@ -27,7 +28,8 @@ exec 3>&1
 
 MARKER=.whiteboard-install.json
 MARK='# Written by Whiteboard Desktop, which replaces it with each install.'
-RELEASES=${WHITEBOARD_RELEASES:-https://install.dev.fast/releases}
+RELEASES=${WHITEBOARD_RELEASES-}
+RELEASES=${RELEASES%/}
 hand=
 
 say() { [ -n "$hand" ] || printf '\n%s %s\n' WHITEBOARD-INSTALL "$*" >&3; }
@@ -274,6 +276,7 @@ install() {
 		*) fail "this host's CPU is $(uname -m); Whiteboard needs x86_64 or aarch64" ;;
 		esac
 		[ -n "$downloader" ] || fail Whiteboard needs curl or wget
+		[ -n "$RELEASES" ] || fail "set WHITEBOARD_RELEASES to the release base that serves <version>/remote/ tarballs"
 		url="$RELEASES/$version/remote/whiteboard-remote-$version-$target.tar.xz"
 		if [ "$downloader" = curl ]; then sha256=$(curl -fsSL "$url.sha256"); else sha256=$(wget -qO- "$url.sha256"); fi
 		sha256=${sha256%% *}

@@ -32,7 +32,6 @@ export function isolatedEnv(root: string): NodeJS.ProcessEnv {
     ...env,
     HOME: home,
     DEV_REVIEW_HOME: path.join(home, ".dev"),
-    DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
     DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",
     NODE_USE_ENV_PROXY: "1",
     HTTPS_PROXY: "http://127.0.0.1:9",

@@ -31,8 +31,6 @@ export function createCanvasQueryClient(): QueryClient {
 
 /** Desktop shares one client across boards, so board keys name the board. */
 export const canvasQueryKeys = {
-  sharingAccount: () => ["sharing", "account"] as const,
-  shareLink: (board: string) => ["sharing", "link", board] as const,
   askThread: (threadId: string) => ["ask-thread", threadId] as const,
   diffFiles: (
     board: string,

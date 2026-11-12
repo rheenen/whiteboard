@@ -1,10 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createShareSchema } from "@dev.fast/review-share-protocol";
 import { createReviewApi } from "@review/review-api/http.js";
 import { openLocalReviewStore } from "@review/review-api/local-data.js";
 import { Hono } from "hono";
@@ -12,12 +11,11 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { createShareFixture } from "../../test/fixtures/share/create.js";
 import { exportShare } from "./export.js";
+import { parseWhiteboardFile } from "./file.js";
 import { mountSharingPublisher } from "./host.js";
-import { importShare, shareKey, validateShareBundle } from "./import.js";
+import { importShare, validateShareBundle } from "./import.js";
 
 const cleanup: Array<() => Promise<void>> = [];
-
-const capability = () => randomBytes(32).toString("base64url");
 
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -60,44 +58,22 @@ async function fixture() {
 
 it("imports a document shared without a GitHub repository as a board of its own", async () => {
   const local = await fixture();
-  vi.stubEnv("DEV_REVIEW_SHARE_TOKEN", "fixture");
-  vi.stubEnv("DEV_REVIEW_SHARE_ORIGIN", "https://sharing.test");
-  const shareId = randomUUID();
-  let body: unknown;
 
   const app = new Hono();
   app.onError((error, context) => context.json({ error: error.message }, 500));
-  mountSharingPublisher(app, local.store, local.data, {
-    fetch: async (input, init) => {
-      if (new URL(String(input)).pathname === "/api/auth/token")
-        return new Response(null, { status: 404 });
-      expect(new URL(String(input)).pathname).toBe("/api/v2/shares");
-      expect(init?.method).toBe("POST");
-      body = JSON.parse(String(init?.body));
+  mountSharingPublisher(app, local.store, local.data);
 
-      return Response.json({
-        shareId,
-        url: `https://sharing.test/s/${"x".repeat(43)}`,
-      });
-    },
-  });
-
-  const response = await app.request("/sharing/publish", {
+  const response = await app.request("/sharing/export", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ reviewId: local.reviewId }),
   });
 
-  expect(await response.json()).toMatchObject({ shareId });
   expect(response.status).toBe(200);
-  const { bundle } = createShareSchema.parse(body);
+  const bundle = parseWhiteboardFile((await response.json()).text);
   expect(bundle.repository).toBeUndefined();
 
-  const id = await importShare(
-    local,
-    shareKey("https://sharing.test", capability()),
-    bundle,
-  );
+  const id = await importShare(local, randomUUID(), bundle);
 
   const copy = local.store.read(id);
 
@@ -151,11 +127,7 @@ it("leaves images unshared on a document without source pins", async () => {
   expect(Object.keys(bundle.maps)).toEqual([]);
   expect(bundle.images).toEqual({});
 
-  const id = await importShare(
-    { ...local, cloneRepository: initRepository },
-    shareKey("https://sharing.test", capability()),
-    bundle,
-  );
+  const id = await importShare(local, randomUUID(), bundle);
 
   const api = createReviewApi(local.store, local.data);
   const copy = local.store.read(id).document;
@@ -201,32 +173,13 @@ it("rejects source-dependent content disguised as a document-only share", async 
     await expect(
       importShare(
         local,
-        shareKey("https://sharing.test", capability()),
+        randomUUID(),
         // SAFETY: the test disguises the snapshot on purpose.
         { ...bundle, snapshot: { ...snapshot, ...extra } } as typeof bundle,
       ),
-    ).rejects.toThrow(/code references|viewed in the browser/i);
+    ).rejects.toThrow(/code references|open a checkout/i);
   }
 });
-
-/** Stands in for a clone: an empty repository. */
-async function initRepository(root: string) {
-  await mkdir(root, { recursive: true });
-  execFileSync("git", ["init", "-q", root]);
-  execFileSync("git", [
-    "-C",
-    root,
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "-q",
-    "--allow-empty",
-    "-m",
-    "Empty",
-  ]);
-}
 
 async function sharedPlan(cloneUrl = "https://github.com/acme/app.git") {
   const local = await fixture();
@@ -268,32 +221,22 @@ async function sharedPlan(cloneUrl = "https://github.com/acme/app.git") {
     repository: { cloneUrl },
   });
 
-  const cloneRepository = vi.fn<typeof initRepository>(initRepository);
+  const id = await importShare(local, randomUUID(), bundle);
 
-  const id = await importShare(
-    { ...local, cloneRepository },
-    shareKey("https://sharing.test", capability()),
-    bundle,
-  );
-
-  return { local, id, repositoryId, cloneRepository };
+  return { local, id, repositoryId };
 }
 
 it("files a shared plan without pins on the receiver's checkout of its repository", async () => {
-  const { local, id, repositoryId, cloneRepository } = await sharedPlan();
+  const { local, id, repositoryId } = await sharedPlan();
 
   expect(local.store.read(id).target).toEqual({
     kind: "project",
     repositoryId,
   });
-  expect(cloneRepository).not.toHaveBeenCalled();
 });
 
 it("keeps a shared plan the receiver has no checkout of as a board of its own", async () => {
-  const { local, id, cloneRepository } = await sharedPlan(
-    "https://github.com/acme/other.git",
-  );
+  const { local, id } = await sharedPlan("https://github.com/acme/other.git");
 
   expect(local.store.read(id).target).toBeUndefined();
-  expect(cloneRepository).not.toHaveBeenCalled();
 });

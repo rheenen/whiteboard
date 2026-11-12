@@ -7,7 +7,7 @@ import {
   normalizeGitHubRemote,
   normalizeGitRemote,
 } from "@dev.fast/review-share-protocol";
-import { type Pins, ReviewInputError } from "@dev.fast/whiteboard-document";
+import { ReviewInputError } from "@dev.fast/whiteboard-document";
 
 /** A full commit id, SHA-1 or SHA-256. */
 export const COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
@@ -92,57 +92,6 @@ function fetchError(stderr: string): ReviewInputError {
   );
 }
 
-/** `commits` are other commits the board's references read at; a plan has
- * only those. */
-export async function fetchPinnedRepository(
-  root: string,
-  url: string,
-  pins: Pick<Pins, "base" | "head"> | undefined,
-  commits: readonly string[] = [],
-) {
-  // Each commit and the ref it is fetched to.
-  const named = [
-    ...(pins
-      ? [
-          { commit: pins.base, ref: "base" },
-          { commit: pins.head, ref: "head" },
-        ]
-      : []),
-    ...commits.map((commit) => ({ commit, ref: `commits/${commit}` })),
-  ];
-
-  if (!named.every(({ commit }) => COMMIT_ID.test(commit)))
-    throw new ReviewInputError(
-      "Sharing requires immutable base and head commits.",
-    );
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  await sharedGit(root, ["init", "--quiet"]);
-  await sharedGit(root, ["config", "core.hooksPath", "/dev/null"]);
-  await sharedGit(root, ["config", "core.fsmonitor", "false"]);
-
-  if (process.platform === "win32")
-    await sharedGit(root, ["config", "core.longpaths", "true"]);
-
-  await sharedGit(root, ["remote", "add", "origin", { remote: url }]);
-
-  try {
-    await sharedGit(root, [
-      "fetch",
-      "--no-tags",
-      "--force",
-      "origin",
-      ...named.map(({ commit, ref }) => ({
-        refspec: { from: commit, to: `refs/review/${ref}` },
-      })),
-    ]);
-  } catch (error) {
-    throw fetchError(stderrOf(error));
-  }
-
-  for (const { commit } of named)
-    await sharedGit(root, ["cat-file", "-e", { rev: `${commit}^{commit}` }]);
-}
-
 /** Fetches the commits a shared board's links read at into a checkout of
  * its repository, from its origin unless it has them, and keeps each under
  * `refs/review/shared/<share>/<commit>`, so `git gc` can't prune one the
@@ -212,28 +161,6 @@ export async function forgetSharedCommits(root: string, share: string) {
     await sharedGit(root, ["update-ref", "-d", { ref }]);
 }
 
-/** A managed clone of a repository's default branch, for a shared board
- * with no pins whose repository the receiver has no checkout of. */
-export async function cloneSharedRepository(root: string, url: string) {
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  await sharedGit(root, ["init", "--quiet"]);
-  await sharedGit(root, ["config", "core.hooksPath", "/dev/null"]);
-  await sharedGit(root, ["config", "core.fsmonitor", "false"]);
-
-  if (process.platform === "win32")
-    await sharedGit(root, ["config", "core.longpaths", "true"]);
-
-  await sharedGit(root, ["remote", "add", "origin", { remote: url }]);
-
-  try {
-    await sharedGit(root, ["fetch", "--no-tags", "origin", "HEAD"]);
-  } catch (error) {
-    throw fetchError(stderrOf(error));
-  }
-
-  await sharedGit(root, ["checkout", "--detach", "FETCH_HEAD"]);
-}
-
 /** The folder name a clone of `url` gets, as `git clone` would pick it. */
 export function repositoryName(url: string): string {
   const last = url
@@ -283,32 +210,6 @@ export async function cloneForReader(
   }
 
   return root;
-}
-
-export async function repositoryReady(
-  root: string,
-  pins: Pick<Pins, "base" | "head">,
-  commits: readonly string[] = [],
-): Promise<boolean> {
-  if (
-    ![pins.base, pins.head, ...commits].every((commit) =>
-      COMMIT_ID.test(commit),
-    )
-  )
-    return false;
-
-  try {
-    const head = await sharedGit(root, ["rev-parse", "HEAD"]);
-
-    if (head.stdout.trim() !== pins.head) return false;
-
-    for (const commit of [pins.base, pins.head, ...commits])
-      await sharedGit(root, ["cat-file", "-e", { rev: `${commit}^{commit}` }]);
-
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Where a reader fetches the board's commits: `repository` for GitHub, as

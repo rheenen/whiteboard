@@ -3,15 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  MAX_SHARE_BYTES,
-  createShareSchema,
-} from "@dev.fast/review-share-protocol";
-import { ReviewInputError } from "@dev.fast/whiteboard-document";
 import { afterEach, expect, it } from "vitest";
 
 import { createShareFixture } from "../../test/fixtures/share/create.js";
-import { exportShare, shareRequestBody } from "./export.js";
+import { exportShare } from "./export.js";
+import { parseWhiteboardFile, whiteboardFileText } from "./file.js";
 import { validateShareBundle } from "./import.js";
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -36,8 +32,8 @@ it("carries the board, its resources, commits, resolved selections and exactly t
   const shared = await fixture();
   const { pins } = shared.store.read(shared.reviewId);
 
-  const { bundle } = createShareSchema.parse(
-    JSON.parse(shareRequestBody(await exportShare(shared), randomUUID())),
+  const bundle = parseWhiteboardFile(
+    whiteboardFileText(await exportShare(shared)),
   );
 
   expect(bundle.snapshot).not.toHaveProperty("target");
@@ -99,16 +95,6 @@ it("carries the board, its resources, commits, resolved selections and exactly t
   expect(validateShareBundle(stacked).snapshot.origin).toEqual({
     baseBranch: "main",
   });
-});
-
-it("refuses a bundle past the upload limit", async () => {
-  const shared = await fixture();
-  const bundle = await exportShare(shared);
-  bundle.images.large = { png: "x".repeat(MAX_SHARE_BYTES) };
-
-  expect(() => shareRequestBody(bundle, randomUUID())).toThrow(
-    ReviewInputError,
-  );
 });
 
 it("opens a bundle from a build with trace capture, ignoring its traces", async () => {

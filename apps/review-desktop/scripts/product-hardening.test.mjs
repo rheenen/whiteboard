@@ -19,9 +19,8 @@ test("keeps Review disconnected from Microsoft update and extension services", (
   assert.equal(product.enableTelemetry, false);
   assert.equal(product.extensionsGallery, null);
   assert.deepEqual(product.builtInExtensions, []);
-  // Review must never fall back to Microsoft's update service; the sanctioned
-  // feed below is the only one it may contact.
-  assert.notEqual(product.updateUrl, "https://update.code.visualstudio.com");
+  // This build has no update feed, so it never asks a server for updates.
+  assert.equal(product.updateUrl, undefined);
 });
 
 test("publishes the release number the About panel shows", async () => {

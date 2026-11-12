@@ -32,7 +32,6 @@ import { useRightPanelResize } from "@canvas/side-panel-resizer";
 import { withClass } from "@canvas/stylex-props";
 import { themeClass, themeStyles } from "@canvas/theme-styles";
 import { tokens } from "@canvas/tokens.stylex";
-import { captureUiEvent } from "@canvas/ui-telemetry";
 import { IconButton, buttonStyles } from "@canvas/ui/button";
 import { Chip } from "@canvas/ui/chip";
 import { EmptyState } from "@canvas/ui/empty-state";
@@ -905,19 +904,14 @@ export function SoftwareMapFrame({
 
   const captureNodeExpansion = (node: SoftwareMapNodeSnapshot) => {
     if (!node.expandable || node.expanded) return;
-    captureUiEvent(session, "map_expanded", {
-      level: mapExpansionLevelForNode(node),
-    });
   };
 
   const selectNodeWithTelemetry = (node: SoftwareMapNodeSnapshot) => {
-    captureUiEvent(session, "peek_opened", { via: "map" });
     onSelectNode?.(node);
   };
 
   const expandNodeWithTelemetry = (node: SoftwareMapNodeSnapshot) => {
     captureNodeExpansion(node);
-    captureUiEvent(session, "peek_opened", { via: "map" });
     onExpandNode?.(node);
   };
 

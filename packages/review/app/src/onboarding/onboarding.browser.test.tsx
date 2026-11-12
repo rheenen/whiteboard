@@ -23,8 +23,6 @@ function server(
     const url = new URL(String(input));
     const route = `${init?.method ?? "GET"} ${url.pathname}`;
 
-    if (route === "POST /telemetry/event") return Response.json({ ok: true });
-
     requests.push(route);
 
     if (route === "GET /install/agents")

@@ -48,9 +48,8 @@ The product is named Whiteboard, but package names and directories still use
 - `packages/review/` contains the `whiteboard` command-line interface, embedded
   server, and canvas.
 - `packages/review-protocol/` contains the shared process contracts.
-- `packages/trace-core/` contains shared file and process helpers, the hosted
-  service login, and the cleanup of hooks that earlier builds installed for
-  agent trace capture.
+- `packages/trace-core/` contains shared file and process helpers and the
+  cleanup of hooks that earlier builds installed for agent trace capture.
 - `packages/agent-plugins/` contains the plugins and skills for supported
   coding agents.
 - `packages/local-vcs/` contains local version-control helpers.
@@ -110,18 +109,11 @@ description:
 - describe the behavior you added or changed;
 - explain how you validated it; and
 - call out anything reviewers should pay attention to, such as stored-data
-  migrations, telemetry changes, or changes to the vendored Code - OSS fork.
+  migrations, network access, or changes to the vendored Code - OSS fork.
 
-If your change adds or changes telemetry, update
-[docs/telemetry.md](docs/telemetry.md) in the same pull request.
+## Network access
 
-## Telemetry
-
-Run `DEV_FAST_REVIEW_TELEMETRY_DEBUG=1 whiteboard app launch` to print each
-event to stderr instead of sending it. Tests disable telemetry
-(`VITEST=1`, `NODE_ENV=test`); harnesses set `DEV_FAST_REVIEW_TELEMETRY_ENV` to
-`e2e` or `smoke`.
-
-Events and their allowed properties live in
-`packages/review/src/ui-telemetry-events.ts` and
-`packages/review/src/review-telemetry.ts`.
+This build talks to no dev.fast service: no sign-in, sharing, bug or crash
+reports, feedback or usage data, no update feed and no remote downloads from
+dev.fast. Do not add any; [docs/privacy.md](docs/privacy.md) lists what
+Whiteboard does send.

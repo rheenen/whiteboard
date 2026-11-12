@@ -8,7 +8,10 @@ import { readReviewPackageVersion } from "@review/package-paths.js";
 import { Agent } from "undici";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { createGatewayHosts } from "./review-gateway-hosts.js";
+import {
+  createGatewayHosts,
+  handInstallCommand as handInstall,
+} from "./review-gateway-hosts.js";
 import {
   startFake,
   startRemote,
@@ -18,9 +21,6 @@ import { readBody, send } from "./review-gateway-transport.js";
 
 const version = readReviewPackageVersion(import.meta.url);
 
-const handInstall = (v: string) =>
-  `curl -fsSL https://install.dev.fast/releases/${v}/remote/install.sh | sh -s -- --version ${v}`;
-
 let root: string;
 
 const closes: (() => void)[] = [];
@@ -28,7 +28,6 @@ const closes: (() => void)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-gateway-hosts-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
 });
 
 afterEach(async () => {
@@ -82,10 +81,11 @@ it("refuses a host on another version, naming both versions, with the install co
   expect(state?.detail).toContain("Install Whiteboard 0.0.0-other on devbox.");
   expect(state?.detail).not.toContain("npm install");
   expect(state?.installCommand).toBe(handInstall("0.0.0-other"));
+  expect(state?.installCommand).not.toContain("dev.fast");
   expect(gateway.online()).toEqual([]);
 });
 
-it("names this machine's install command for a host without Whiteboard", () => {
+it("names the hand install command for a host without Whiteboard", () => {
   const gateway = hosts("0.1.6");
 
   gateway.set([

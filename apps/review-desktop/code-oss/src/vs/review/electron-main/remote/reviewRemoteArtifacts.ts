@@ -3,7 +3,6 @@
  *  Licensed under the MIT License. See LICENSE in the repository root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { IWhiteboardRemoteProduct } from "../../../base/common/product.js";
 import type { ReviewRemoteTarget } from "./reviewRemoteProbe.js";
 
 export interface ReviewRemoteArtifact {
@@ -15,8 +14,9 @@ export interface ReviewRemoteArtifact {
 export const REVIEW_REMOTE_RELEASES_ENV = "DEV_FAST_REVIEW_REMOTE_RELEASES";
 
 export interface ReviewRemoteArtifactsOptions {
-	readonly pin: IWhiteboardRemoteProduct | undefined;
-	/** A base URL that holds `whiteboard-remote-<version>-<target>.tar.xz` and its `.sha256`, in place of the pin. */
+	/** A base URL the user hosts, from `DEV_FAST_REVIEW_REMOTE_RELEASES`, that
+	 * holds `whiteboard-remote-<version>-<target>.tar.xz` and its `.sha256`.
+	 * This build has no other source of remote tarballs. */
 	readonly releases?: string;
 }
 
@@ -37,23 +37,16 @@ function releasesBase(releases: string): URL | undefined {
 
 /** Where hosts download the tarball from; undefined when this build has none, or the override is not a URL. */
 export function remoteReleasesOrigin(options: ReviewRemoteArtifactsOptions): string | undefined {
-	if (options.releases) return releasesBase(options.releases)?.origin;
-	return options.pin && new URL(options.pin["linux-x64"].url).origin;
+	return options.releases ? releasesBase(options.releases)?.origin : undefined;
 }
 
 export async function remoteArtifact(target: ReviewRemoteTarget, version: string, options: ReviewRemoteArtifactsOptions): Promise<ReviewRemoteArtifact> {
-	if (options.releases) {
-		const base = releasesBase(options.releases);
-		if (!base) throw new Error(`${REVIEW_REMOTE_RELEASES_ENV} is not an http or https URL: ${options.releases}`);
-		const name = `whiteboard-remote-${version}-${target}.tar.xz`;
-		const url = new URL(encodeURIComponent(name), base).href;
-		return { name, url, sha256: await fetchSha256(`${url}.sha256`) };
-	}
-	const { pin } = options;
-	if (!pin) throw new ReviewRemoteNoTarball();
-	const { url, sha256 } = pin[target];
-	if (!url.startsWith("https:")) throw new Error(`The pinned remote tarball ${url} is not https.`);
-	return { name: `whiteboard-remote-${pin.version}-${target}.tar.xz`, url, sha256 };
+	if (!options.releases) throw new ReviewRemoteNoTarball();
+	const base = releasesBase(options.releases);
+	if (!base) throw new Error(`${REVIEW_REMOTE_RELEASES_ENV} is not an http or https URL: ${options.releases}`);
+	const name = `whiteboard-remote-${version}-${target}.tar.xz`;
+	const url = new URL(encodeURIComponent(name), base).href;
+	return { name, url, sha256: await fetchSha256(`${url}.sha256`) };
 }
 
 async function fetchSha256(url: string): Promise<string> {

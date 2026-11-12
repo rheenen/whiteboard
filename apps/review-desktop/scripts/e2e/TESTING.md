@@ -3,14 +3,12 @@
 Each journey in `journeys/` launches Whiteboard Desktop once against
 an isolated review home, profile, remote-debugging port and temp root, and drives
 it through the JSON review API, the installed `whiteboard` CLI and Playwright over
-CDP. Run `telemetry-contract` alone with
-`pnpm --filter @dev.fast/review-desktop test:e2e:telemetry`.
+CDP.
 `../e2e-runner.test.mjs` checks every journey exports `name`, `phase` and `run`.
 
 ## Prerequisites
 
-macOS or Linux, Node 24, an installed workspace (`shared-review` seeds its
-fixture with `tsx` from `packages/review`), and a built Desktop from
+macOS or Linux, Node 24, an installed workspace, and a built Desktop from
 `pnpm --filter @dev.fast/review-desktop app:build`. `go` and `cargo` are needed
 only for the phase-2 journeys.
 
@@ -287,9 +285,9 @@ The connect step needs npm and GitHub on `fresh`.
 
 With `REVIEW_E2E_REMOTE_HOSTS` set to `aws-up` hosts in the `WB_TEST_RUN` run,
 the journey installs on those hosts instead of containers. It never removes the
-run. First publish this checkout's tarballs with
-`DEV_FAST_REVIEW_REMOTE_PUBLISH=1 node apps/review-desktop/scripts/remote-dev-install.mjs`,
-and export the `DEV_FAST_REVIEW_REMOTE_RELEASES` line it prints.
+run. First build this checkout's tarballs with
+`scripts/build-remote-tarball.mjs`, serve them over https where the hosts can
+reach them, and export `DEV_FAST_REVIEW_REMOTE_RELEASES` with that URL.
 
 ```sh
 R="node apps/review-desktop/scripts/e2e/remote/remote.mjs"

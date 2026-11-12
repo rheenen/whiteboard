@@ -50,7 +50,6 @@ const detaches: (() => void)[] = [];
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "review-pushes-"));
   vi.stubEnv("DEV_REVIEW_HOME", root);
-  vi.stubEnv("DEV_FAST_REVIEW_TELEMETRY_DISABLED", "1");
 });
 
 afterEach(async () => {

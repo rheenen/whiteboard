@@ -1,7 +1,7 @@
-// Gate between a packaged, notarized build and the R2 upload: verify the
-// artifacts really are the release we think they are, then emit the
-// latest.json manifest the update Worker serves (see apps/update/src/types.ts
-// for the schema). Run from the release workflow after app:package:macos.
+// Gate between a packaged, notarized build and the upload: verify the
+// artifacts really are the release we think they are. This build has no
+// update feed, so the packaged product.json must carry no updateUrl. Run from
+// the release workflow after app:package:macos.
 // Curated extension checks also read code-oss/package.json from this checkout.
 //
 //   node scripts/validate-release-artifacts.mjs \
@@ -9,7 +9,7 @@
 //     [--artifact-dir dist]
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
@@ -32,41 +32,7 @@ import {
 
 const APP_DIR = path.resolve(import.meta.dirname, "..");
 
-const UPDATE_URL = "https://update.dev.fast";
-
 export { assertReleaseChannel };
-
-// `payloads` is one entry per update zip, in updateBundlesFor() order: the
-// first is the default for clients that do not name their bundle folder.
-export function buildManifest({
-  version,
-  commit,
-  payloads,
-  target,
-  now = new Date(),
-}) {
-  const bundles = Object.fromEntries(
-    payloads.map(({ bundle, artifact, sha256 }) => [
-      bundle,
-      {
-        url: `${UPDATE_URL}/releases/${version}/${target}/${updateZipName(artifact, version, target)}`,
-        sha256hash: sha256,
-      },
-    ]),
-  );
-
-  const [fallback] = Object.values(bundles);
-
-  return {
-    version,
-    commit,
-    ...fallback,
-    name: version,
-    pub_date: now.toISOString(),
-    timestamp: now.getTime(),
-    bundles,
-  };
-}
 
 // Squirrel renames an install to the update's CFBundleExecutable, so a zip
 // served to <bundle>.app installs must carry exactly that bundle with an
@@ -115,7 +81,6 @@ export function assertPackagedProduct(product, { commit, channel = "stable" }) {
   const expectations = {
     commit,
     quality: channel,
-    updateUrl: UPDATE_URL,
     ...releaseIdentityFor(channel),
   };
 
@@ -125,6 +90,13 @@ export function assertPackagedProduct(product, { commit, channel = "stable" }) {
         `packaged product.json ${key} is ${JSON.stringify(product[key])}, expected ${JSON.stringify(expected)}`,
       );
     }
+  }
+
+  // An update feed would make the app call a download service on its own.
+  if (product.updateUrl !== undefined) {
+    throw new Error(
+      `packaged product.json has updateUrl ${JSON.stringify(product.updateUrl)}; this build has no update feed`,
+    );
   }
 }
 
@@ -304,9 +276,6 @@ async function main() {
   }
 
   const payloads = zips.map((zip) => ({ ...zip, sha256: sha256(zip.file) }));
-  const manifest = buildManifest({ version, commit, payloads, target });
-  const manifestPath = path.join(artifactDir, "latest.json");
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   console.log(`Validated release artifacts for ${version} (${commit}):`);
 
@@ -315,7 +284,6 @@ async function main() {
   }
 
   console.log(`  ${dmg} sha256=${sha256(dmg)}`);
-  console.log(`  ${manifestPath}`);
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {

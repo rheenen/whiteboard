@@ -10,7 +10,7 @@ import { REVIEW_DESKTOP_CONNECTION_VERSION } from "../common/reviewDesktopBootst
 import { ReviewDesktopConnectionService } from "./reviewDesktopConnectionService.js";
 
 function serviceWith(): ReviewDesktopConnectionService {
-	const service = new ReviewDesktopConnectionService({} as never, {} as never);
+	const service = new ReviewDesktopConnectionService({} as never);
 	Object.assign(service, {
 		connection: {
 			version: 1,
@@ -90,7 +90,6 @@ for (const reachable of [true, false]) {
 					}),
 				}),
 			} as never,
-			{} as never,
 		);
 		t.after(() => service.dispose());
 		mockFetch(t, async (input) => {

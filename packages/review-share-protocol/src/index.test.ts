@@ -6,59 +6,11 @@ import {
   gitRemoteUrlSchema,
   normalizeGitHubRemote,
   normalizeGitRemote,
-  parseShareLink,
   repositoryIdentity,
   repositoryLabel,
   shareBundleSchema,
-  shareLink,
   sharePathSchema,
 } from "./index.js";
-
-it("puts the capability in the path and rejects credentials, fragments or other paths", () => {
-  const token = "a".repeat(43),
-    url = shareLink("https://app.dev.fast", token);
-
-  expect(url).toBe(`https://app.dev.fast/s/${token}`);
-  expect(parseShareLink(url)).toEqual({
-    origin: "https://app.dev.fast",
-    capability: token,
-  });
-  expect(parseShareLink(`${url}?app=preview`).capability).toBe(token);
-  expect(() =>
-    parseShareLink(url.replace("https://", "https://user:password@")),
-  ).toThrow("HTTPS");
-  expect(() => parseShareLink(`${url}#x`)).toThrow("HTTPS");
-  expect(() => parseShareLink(url.replace("/s/", "/other/"))).toThrow(
-    "expected string",
-  );
-});
-
-it("carries a revision as ?rev= and rejects any other query", () => {
-  const token = "a".repeat(43),
-    rev = "5b0e9a52-4a43-4f7e-9d8e-3c1f0e7b2a11";
-
-  expect(shareLink("https://app.dev.fast", token, rev)).toBe(
-    `https://app.dev.fast/s/${token}?rev=${rev}`,
-  );
-  expect(parseShareLink(`https://app.dev.fast/s/${token}?rev=${rev}`)).toEqual({
-    origin: "https://app.dev.fast",
-    capability: token,
-    revision: rev,
-  });
-  expect(
-    parseShareLink(`https://app.dev.fast/s/${token}?app=preview&rev=${rev}`)
-      .revision,
-  ).toBe(rev);
-  expect(() =>
-    parseShareLink(`https://app.dev.fast/s/${token}?rev=nope`),
-  ).toThrow("Invalid UUID");
-  expect(() => parseShareLink(`https://app.dev.fast/s/${token}?x=1`)).toThrow(
-    "HTTPS",
-  );
-  expect(parseShareLink(`https://app.dev.fast/s/${token}`)).not.toHaveProperty(
-    "revision",
-  );
-});
 
 it("rejects traversal paths and platform-specific separators", () => {
   for (const file of [

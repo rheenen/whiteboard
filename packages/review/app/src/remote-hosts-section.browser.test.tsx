@@ -44,8 +44,6 @@ async function render(hosts: ReviewRemoteHostsSettings) {
   const reject = () => Promise.reject(new Error("unused"));
 
   const settings: ReviewCanvasSettingsContent = {
-    telemetryEnabled: false,
-    setTelemetryEnabled: reject,
     theme: "Review Dark",
     setTheme: reject,
     diffTheme: "",

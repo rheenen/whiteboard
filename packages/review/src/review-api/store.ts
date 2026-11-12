@@ -1572,24 +1572,6 @@ export class ReviewStore {
     }));
   }
 
-  /** Two saved board/day pairs in the last fourteen days. */
-  feedbackEligible(now = Date.now()): boolean {
-    const row = this.db
-      .prepare(`SELECT count(*) AS pairs FROM (
-        SELECT DISTINCT review_id, date(json_extract(snapshot, '$.createdAt')) AS utc_date
-        FROM versions
-        WHERE (version = 0 OR json_type(snapshot, '$.lastEdit') = 'object')
-          AND julianday(json_extract(snapshot, '$.createdAt')) BETWEEN julianday(?) AND julianday(?)
-        LIMIT 2
-      )`)
-      .get(
-        new Date(now - 14 * 24 * 60 * 60 * 1000).toISOString(),
-        new Date(now).toISOString(),
-      );
-
-    return Number(row?.pairs) >= 2;
-  }
-
   history(id: string): HistoryEntry[] {
     return this.db
       .prepare(
@@ -1657,46 +1639,6 @@ export class ReviewStore {
     ).then((source) => this.applyPreparedCommand(source, initial, author));
 
     return this.track(prepared);
-  }
-
-  /** Replaces a share copy's content under the same board id; 409 once it moved past `baseVersion`. */
-  refreshCopy(
-    reviewId: string,
-    baseVersion: number,
-    // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Command boundary: commandSchema.parse below rejects malformed input before mutation.
-    create: unknown,
-    seed: Seed,
-  ): Promise<Result> {
-    if (this.closing)
-      return Promise.reject(new Error("Review store is closing."));
-    const command = commandSchema.parse(create);
-    const op = command.operation;
-
-    if (
-      op.type !== "create" ||
-      op.pullRequestUrl ||
-      op.parentId ||
-      op.dependsOn ||
-      op.projectId
-    )
-      throw new ReviewInputError(
-        "A refresh takes a create command with a title and target alone.",
-      );
-    const person: Author = { kind: "person" };
-
-    return this.track(
-      this.prepareCommand(
-        command,
-        undefined,
-        Promise.resolve(undefined),
-        person,
-      ).then((source) =>
-        this.applyPreparedCommand(source, seed, person, {
-          reviewId,
-          baseVersion,
-        }),
-      ),
-    );
   }
 
   private track(prepared: Promise<Result>) {

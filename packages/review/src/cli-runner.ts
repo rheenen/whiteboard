@@ -16,13 +16,9 @@ import {
 } from "@dev.fast/review-protocol";
 import {
   type CliInputStream,
-  DEFAULT_STORE_ORIGIN,
   emitJsonEvent,
   humanStream,
   jsonRequestedInArgv,
-  runStoreLogin,
-  runStoreLogout,
-  runStoreWhoami,
 } from "@dev.fast/trace-core";
 import { Argument, Command, CommanderError, Option } from "commander";
 
@@ -34,11 +30,7 @@ import {
 } from "./cli-install";
 import { cliRuntimeInfo, describeCliRuntime } from "./cli-runtime-info";
 import { connectPrompts } from "./connect-prompts";
-import {
-  ReviewInstanceUnavailableError,
-  desktopUsesHome,
-  selectReviewInstance,
-} from "./desktop-discovery";
+import { desktopUsesHome, selectReviewInstance } from "./desktop-discovery";
 import {
   ALL_INSTALL_TARGETS,
   type InstallTarget,
@@ -51,13 +43,7 @@ import {
 } from "./package-paths";
 import { isRetiredTraceHook } from "./retired-trace-hooks";
 import { reviewAgentCliHelp } from "./review-api/agent-cli";
-import { ReviewApiError } from "./review-api/client";
-import {
-  type ReviewAppEvent,
-  ReviewAppStateError,
-  ReviewAppUsageError,
-  runReviewAppPick,
-} from "./review-app";
+import { type ReviewAppEvent, runReviewAppPick } from "./review-app";
 import {
   type ReviewAppLaunchEvent,
   runReviewAppLaunch,
@@ -70,14 +56,6 @@ import {
 } from "./review-instances";
 import { emitReviewEvent, serializeReviewError } from "./review-logger";
 import {
-  type ReviewCliCommand,
-  type ReviewCliCommandPath,
-  type ReviewCommandTelemetry,
-  ReviewTelemetry,
-  type ReviewTelemetryErrorCategory,
-  type ReviewTelemetryErrorName,
-} from "./review-telemetry";
-import {
   DESKTOP_TAKEOVER_SIGNAL,
   type ReviewServerDiscovery,
   readReviewServerDiscovery,
@@ -86,13 +64,6 @@ import {
   reviewServerStateDir,
   serverNotReady,
 } from "./server-discovery";
-import { aliasInstallationToAccount } from "./server/account-alias";
-import {
-  applyDesktopSharingSetting,
-  refuseDisabledSharing,
-} from "./sharing/disabled";
-import { setTraceAttribute, span } from "./startup-trace";
-import type { ReviewTelemetrySurface } from "./telemetry-config";
 
 class ReviewCliUsageError extends Error {
   readonly name = "ReviewCliUsageError";
@@ -102,9 +73,6 @@ interface ReviewCliRuntime {
   runReviewAppLaunch: typeof runReviewAppLaunch;
   runReviewAppPick: typeof runReviewAppPick;
   runReviewInfo: typeof runReviewInfo;
-  runStoreLogin: typeof runStoreLogin;
-  runStoreLogout: typeof runStoreLogout;
-  runStoreWhoami: typeof runStoreWhoami;
 }
 
 export interface ReviewCliInput {
@@ -116,7 +84,6 @@ export interface ReviewCliInput {
   stdin?: CliInputStream;
   stdout: Writable;
   stderr: Writable;
-  telemetry?: ReviewCommandTelemetry;
   runtime?: Partial<ReviewCliRuntime>;
 }
 
@@ -125,7 +92,7 @@ interface ReviewInfoOptions {
   session?: string;
 }
 
-type OutputSurface = ReviewCliCommand | "plain";
+type OutputSurface = "review" | "map" | "status" | "plain";
 
 interface CliRunState {
   exitCode: number;
@@ -146,7 +113,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     input.cliVersion ?? readReviewPackageVersion(import.meta.url);
 
   const runtime = reviewCliRuntime(input.runtime);
-  const telemetry = input.telemetry ?? ReviewTelemetry.fromEnv(env);
 
   const state: CliRunState = {
     exitCode: 0,
@@ -154,22 +120,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     parserErrorOutput: "",
     json: jsonRequestedInArgv(input.argv),
   };
-
-  let telemetryProperties: Record<
-    string,
-    boolean | number | string | null | undefined
-  > = {};
-
-  let activeTelemetry:
-    | {
-        command: ReviewCliCommandPath;
-        commandRunId: string;
-        startedAt: number;
-        finished: boolean;
-      }
-    | undefined;
-
-  let activeCause: unknown;
 
   const configureOutput = <T extends Command>(
     command: T,
@@ -339,7 +289,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         softwareMapEnabled: options.softwareMaps,
         startedBy: options.startedBy,
         signal: controller.signal,
-        telemetry,
         onReady: ({ url, serverPid }) => {
           input.stdout.write(
             options.json
@@ -536,9 +485,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     const stateDir = reviewServerStateDir(authoringEnv(options.stateDir));
 
     const { remoteAttach } = await import("./remote-attach.js");
-
-    // The attaching Desktop's sharing setting, for every process on this host.
-    applyDesktopSharingSetting(env);
 
     let attach: Awaited<ReturnType<typeof remoteAttach>>;
 
@@ -1092,69 +1038,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     },
   );
 
-  const share = configureJsonOutput(
-    program
-      .command("share")
-      .description(
-        "Upload an immutable review snapshot and return its share link (exits 2 when sharing is disabled)",
-      ),
-    "plain",
-  )
-    .option("--review <id>", "review ID")
-    .option("--version <number>", "Saved version to share")
-    .option("--preview", "Open the share link in Whiteboard Preview by default")
-    .option(
-      "--request-id <uuid>",
-      "Reuse this ID when retrying the same immutable upload",
-    )
-    .action(
-      async (options: {
-        session?: string;
-        version?: string;
-        requestId?: string;
-        preview?: boolean;
-        json?: boolean;
-      }) => {
-        const refused = refuseDisabledSharing({ ...input, ...options });
-
-        if (refused !== undefined) {
-          state.exitCode = refused;
-
-          return;
-        }
-
-        const { runShareCli } = await import("./sharing/cli.js");
-        state.exitCode = await runShareCli({
-          ...input,
-          ...options,
-          env: authoringEnv(),
-        });
-      },
-    );
-
-  configureJsonOutput(
-    share
-      .command("revoke <share-id>")
-      .description("Revoke future downloads of a share"),
-    "plain",
-  ).action(async (shareId: string, options: { json?: boolean }) => {
-    const refused = refuseDisabledSharing({ ...input, ...options });
-
-    if (refused !== undefined) {
-      state.exitCode = refused;
-
-      return;
-    }
-
-    const { runShareCli } = await import("./sharing/cli.js");
-    state.exitCode = await runShareCli({
-      ...input,
-      ...options,
-      revoke: shareId,
-      env: authoringEnv(),
-    });
-  });
-
   configureJsonOutput(
     program
       .command("export")
@@ -1212,79 +1095,10 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       },
     );
 
-  // Hosted service login, for sharing.
-  configureJsonOutput(
-    program
-      .command("login")
-      .description(
-        "Log in to Whiteboard with GitHub (exits 2 when sharing is disabled)",
-      ),
-    "plain",
-  )
-    .option(
-      "--origin <url>",
-      `Whiteboard service origin (default: $DEV_REVIEW_SERVICE_ORIGIN or ${DEFAULT_STORE_ORIGIN})`,
-    )
-    .option("--no-browser", "Print the URL instead of opening a browser")
-    .action(
-      async (options: {
-        origin?: string;
-        browser?: boolean;
-        json?: boolean;
-      }) => {
-        const refused = refuseDisabledSharing({ ...input, ...options });
-
-        if (refused !== undefined) {
-          state.exitCode = refused;
-
-          return;
-        }
-
-        state.exitCode = await runtime.runStoreLogin({
-          origin: options.origin,
-          noBrowser: options.browser === false,
-          json: options.json,
-          stdout: input.stdout,
-          stderr: input.stderr,
-        });
-
-        if (state.exitCode === 0)
-          await attemptTelemetry(() =>
-            aliasInstallationToAccount(telemetry, env),
-          );
-      },
-    );
-
-  program
-    .command("logout")
-    .description("Forget the Whiteboard login")
-    .action(async () => {
-      state.exitCode = await runtime.runStoreLogout({ stdout: input.stdout });
-    });
-
-  configureJsonOutput(
-    program.command("whoami").description("Show the Whiteboard login"),
-    "plain",
-  ).action(async (options: { json?: boolean }) => {
-    const refused = refuseDisabledSharing({ ...input, ...options });
-
-    if (refused !== undefined) {
-      state.exitCode = refused;
-
-      return;
-    }
-
-    state.exitCode = await runtime.runStoreWhoami({
-      json: options.json,
-      stdout: input.stdout,
-      stderr: input.stderr,
-    });
-  });
-
   // The JSON authoring surface is owned by review-api/agent-cli.ts. Commander
   // passes the tool name and JSON payload through untouched, so these commands
-  // share the top-level help, the leading `--json` form, and the telemetry
-  // hooks without a separate parser.
+  // share the top-level help and the leading `--json` form without a
+  // separate parser.
   for (const [name, description] of [
     ["api", "Call a JSON review authoring tool on the running server"],
     ["mcp", "Serve the JSON review authoring tools over stdio MCP"],
@@ -1306,12 +1120,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         ...input,
         env: authoringEnv(),
         argv: [name, ...args],
-        onFailure: (error) => {
-          activeCause = error;
-        },
-        onDesktop: (appVersion) => telemetry.setDesktopVersion(appVersion),
-        onToolCall: (call) =>
-          attemptTelemetry(() => telemetry.captureToolCalled(call)),
       });
     });
   }
@@ -1322,33 +1130,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     if (actionCommand.optsWithGlobals().json === true) {
       state.json = true;
     }
-
-    const command = telemetryCommandPath(actionCommand);
-
-    if (!command) return;
-    const commandRunId = telemetry.createCommandRunId();
-    setTraceAttribute("command", command);
-    setTraceAttribute("commandRunId", commandRunId);
-    telemetry.setSurface(commandSurface(command));
-    activeTelemetry = {
-      command,
-      commandRunId,
-      startedAt: Date.now(),
-      finished: false,
-    };
-    await attemptTelemetry(() => telemetry.captureInstallationCreated());
-    await attemptTelemetry(() =>
-      telemetry.captureCommandStarted({ command, commandRunId }),
-    );
-  });
-  program.hook("postAction", async () => {
-    await finishActiveTelemetry(
-      telemetry,
-      activeTelemetry,
-      state.exitCode,
-      activeCause,
-      telemetryProperties,
-    );
   });
 
   try {
@@ -1357,17 +1138,7 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
     return state.exitCode;
   } catch (error) {
     if (error instanceof CommanderError) {
-      if (error.exitCode === 0) {
-        await captureOneOffCommand(
-          telemetry,
-          input.argv.includes("--version") || input.argv.includes("-V")
-            ? "version"
-            : "help",
-          0,
-        );
-
-        return 0;
-      }
+      if (error.exitCode === 0) return 0;
 
       const surface = state.parseSurface;
 
@@ -1390,18 +1161,6 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
         );
       }
 
-      await finishActiveTelemetry(
-        telemetry,
-        activeTelemetry,
-        1,
-        error,
-        telemetryProperties,
-      );
-
-      if (!activeTelemetry) {
-        await captureOneOffCommand(telemetry, "invalid", 1, error);
-      }
-
       return 1;
     }
 
@@ -1414,17 +1173,7 @@ export async function runReviewCli(input: ReviewCliInput): Promise<number> {
       input.stderr.write(ensureTrailingNewline(formatCliError(error)));
     }
 
-    await finishActiveTelemetry(
-      telemetry,
-      activeTelemetry,
-      1,
-      error,
-      telemetryProperties,
-    );
-
     return 1;
-  } finally {
-    await attemptTelemetry(() => telemetry.shutdown(1_000));
   }
 }
 
@@ -1465,9 +1214,6 @@ function reviewCliRuntime(
     runReviewAppLaunch,
     runReviewAppPick,
     runReviewInfo,
-    runStoreLogin,
-    runStoreLogout,
-    runStoreWhoami,
     ...overrides,
   };
 }
@@ -1506,202 +1252,6 @@ function reviewTopLevelHelp(): string {
     "",
     "  Start concise and let me dig deeper through the canvas.",
   ].join("\n");
-}
-
-async function finishActiveTelemetry(
-  telemetry: ReviewCommandTelemetry,
-  active:
-    | {
-        command: ReviewCliCommandPath;
-        commandRunId: string;
-        startedAt: number;
-        finished: boolean;
-      }
-    | undefined,
-  exitCode: number,
-  cause?: unknown,
-  properties: Record<string, boolean | number | string | null | undefined> = {},
-): Promise<void> {
-  if (!active || active.finished) return;
-  active.finished = true;
-  const classification = errorClassification(active.command, cause);
-  await attemptTelemetry(() =>
-    exitCode === 0
-      ? telemetry.captureCommandSucceeded({
-          command: active.command,
-          commandRunId: active.commandRunId,
-          exitCode,
-          durationMs: Date.now() - active.startedAt,
-          properties,
-        })
-      : telemetry.captureCommandFailed({
-          command: active.command,
-          commandRunId: active.commandRunId,
-          exitCode,
-          durationMs: Date.now() - active.startedAt,
-          properties,
-          ...classification,
-        }),
-  );
-}
-
-async function captureOneOffCommand(
-  telemetry: ReviewCommandTelemetry,
-  command: ReviewCliCommandPath,
-  exitCode: number,
-  cause?: unknown,
-): Promise<void> {
-  const commandRunId = telemetry.createCommandRunId();
-  await attemptTelemetry(() => telemetry.captureInstallationCreated());
-  await attemptTelemetry(() =>
-    telemetry.captureCommandStarted({ command, commandRunId }),
-  );
-  const classification = errorClassification(command, cause);
-  await attemptTelemetry(() =>
-    exitCode === 0
-      ? telemetry.captureCommandSucceeded({
-          command,
-          commandRunId,
-          exitCode,
-          durationMs: 0,
-        })
-      : telemetry.captureCommandFailed({
-          command,
-          commandRunId,
-          exitCode,
-          durationMs: 0,
-          ...classification,
-        }),
-  );
-}
-
-function telemetryCommandPath(
-  command: Command,
-): ReviewCliCommandPath | undefined {
-  const name = command.name();
-  const parent = command.parent?.name();
-
-  if (parent === "migrate" && name === "apply") return "migrate.apply";
-
-  if (parent === "server" && name === "start") return "server.start";
-
-  if (name === "login" || name === "logout" || name === "whoami") return name;
-
-  if (name === "api" || name === "mcp" || name === "connect") return name;
-
-  if (parent === "app" && (name === "launch" || name === "pick")) {
-    return `app.${name}`;
-  }
-
-  if (parent === "instances" && (name === "use" || name === "clear"))
-    return `instances.${name}`;
-
-  if (name === "version" || name === "info" || name === "instances") {
-    return name;
-  }
-
-  // Bare `app` takes no --session; picking is only `app pick`.
-  if (name === "app") return "app.launch";
-
-  return undefined;
-}
-
-function commandSurface(command: ReviewCliCommandPath): ReviewTelemetrySurface {
-  if (command === "server.start") return "headless";
-
-  if (command === "mcp") return "mcp";
-
-  if (command === "api") return "api";
-
-  return "cli";
-}
-
-interface ErrorClassification {
-  errorName: ReviewTelemetryErrorName;
-  errorCategory: ReviewTelemetryErrorCategory;
-}
-
-function errorClassification(
-  command: ReviewCliCommandPath,
-  cause: unknown,
-): ErrorClassification {
-  if (cause instanceof CommanderError || command === "invalid") {
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (
-    cause instanceof ReviewCliUsageError ||
-    cause instanceof ReviewAppUsageError
-  ) {
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (cause instanceof ReviewAppStateError) {
-    return {
-      errorName: "review_state_error",
-      errorCategory: "local_state",
-    };
-  }
-
-  if (cause instanceof ReviewInstanceUnavailableError) {
-    return {
-      errorName: "desktop_connection_error",
-      errorCategory: "dependency",
-    };
-  }
-
-  if (cause instanceof ReviewApiError) {
-    if (cause.status === 404)
-      return { errorName: "review_not_found", errorCategory: "local_state" };
-
-    if (cause.status >= 500)
-      return { errorName: "unexpected_error", errorCategory: "internal" };
-
-    return { errorName: "usage_error", errorCategory: "user_input" };
-  }
-
-  if (cause instanceof Error && "code" in cause) {
-    const code = cause.code;
-
-    if (code === "EADDRINUSE" || code === "ECONNREFUSED") {
-      return { errorName: "network_error", errorCategory: "transport" };
-    }
-  }
-
-  if (command === "api" && cause instanceof TypeError) {
-    return { errorName: "network_error", errorCategory: "transport" };
-  }
-
-  const name = cause instanceof Error ? cause.name.toLowerCase() : "";
-
-  if (name.includes("notfound")) {
-    return { errorName: "review_not_found", errorCategory: "local_state" };
-  }
-
-  if (command.startsWith("app.")) {
-    return {
-      errorName: "desktop_connection_error",
-      errorCategory: "dependency",
-    };
-  }
-
-  if (command === "info") {
-    return { errorName: "review_state_error", errorCategory: "local_state" };
-  }
-
-  if (cause) {
-    return { errorName: "unexpected_error", errorCategory: "internal" };
-  }
-
-  return { errorName: "process_error", errorCategory: "dependency" };
-}
-
-async function attemptTelemetry(fn: () => Promise<void>): Promise<void> {
-  try {
-    await span("telemetry capture", fn);
-  } catch {
-    // Telemetry must never affect CLI behavior.
-  }
 }
 
 function commanderErrorMessage(error: CommanderError): string {

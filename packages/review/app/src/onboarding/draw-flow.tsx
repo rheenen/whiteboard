@@ -41,7 +41,6 @@ export function DrawFlow({
   projectPath,
   onStarted,
   onCopied,
-  onRunStarted,
   onStartEmpty,
 }: {
   client: OnboardingClient;
@@ -49,7 +48,6 @@ export function DrawFlow({
   intro?: StepIntro;
   embedded?: boolean;
   projectPath?: string;
-  onRunStarted?(mode: "draw" | "copy", agent?: OnboardingRunAgent["id"]): void;
   onStarted?(reviewId: string): void;
   onCopied?(): void;
   onStartEmpty?(projectPath: string): Promise<void>;
@@ -61,10 +59,7 @@ export function DrawFlow({
     async (prompt: string) => {
       const copied = await copyText(prompt);
 
-      if (copied) {
-        onRunStarted?.("copy");
-        onCopied?.();
-      }
+      if (copied) onCopied?.();
 
       notify(
         copied
@@ -79,7 +74,7 @@ export function DrawFlow({
             },
       );
     },
-    [notify, onCopied, onRunStarted],
+    [notify, onCopied],
   );
 
   return (
@@ -90,10 +85,7 @@ export function DrawFlow({
       embedded={embedded}
       projectPath={projectPath}
       onStartEmpty={onStartEmpty}
-      onStarted={(reviewId, agent) => {
-        onRunStarted?.("draw", agent);
-        onStarted?.(reviewId);
-      }}
+      onStarted={(reviewId) => onStarted?.(reviewId)}
       onCopy={(prompt) => void copy(prompt)}
     />
   );

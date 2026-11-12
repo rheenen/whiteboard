@@ -22,12 +22,9 @@ const themeSettings = (theme) => ({
   "workbench.colorTheme": theme,
 });
 
-/** The telemetry checkbox, the only one in the Privacy section. */
-const telemetryToggle = (settings) =>
-  settings.getByRole("region", { name: "Privacy" }).getByRole("checkbox");
-
 /** The theme select: its value is the `workbench.colorTheme` id. */
-const themeSelect = (settings) => settings.getByRole("combobox", { name: "Theme" });
+const themeSelect = (settings) =>
+  settings.getByRole("combobox", { name: "Theme" });
 
 /** Writes the unreadable record into `<home>/reviews/<uuid>/review.json`. */
 async function seedLegacyReview(home) {
@@ -46,26 +43,6 @@ export async function run(ctx) {
   const { until, userData } = ctx;
 
   let settings = await openSettings(ctx);
-
-  const telemetry = telemetryToggle(settings);
-
-  const before = await telemetry.isChecked();
-
-  // The setting ships enabled, so the flip under test is an opt-out; this journey does not redirect the capture host.
-  assert.ok(
-    before,
-    "the telemetry toggle started disabled, so flipping it would turn telemetry on",
-  );
-  await telemetry.click();
-  await until(
-    async () => (await telemetry.isChecked()) === !before,
-    `the telemetry toggle to read ${!before}`,
-  );
-  // The preference is the whole effect under test; the harness runs with telemetry disabled whichever way it sits.
-  await until(
-    () => readUserSettings(userData)["review.telemetry.enabled"] === !before,
-    `review.telemetry.enabled to be ${!before} in the workbench settings`,
-  );
 
   const theme =
     (await themeSelect(settings).inputValue()) === "Review Light"
@@ -89,11 +66,6 @@ export async function run(ctx) {
 
   settings = await openSettings(ctx);
   assert.equal(
-    await telemetryToggle(settings).isChecked(),
-    !before,
-    "the telemetry toggle did not keep its value across the restart",
-  );
-  assert.equal(
     await themeSelect(settings).inputValue(),
     theme,
     "the theme control did not keep its value across the restart",
@@ -104,11 +76,6 @@ export async function run(ctx) {
     "the workbench settings to be readable after the restart",
   );
 
-  assert.equal(
-    restored["review.telemetry.enabled"],
-    !before,
-    "review.telemetry.enabled did not survive the restart",
-  );
   assert.deepEqual(
     Object.fromEntries(
       Object.keys(themeSettings(theme)).map((key) => [key, restored[key]]),
@@ -116,9 +83,7 @@ export async function run(ctx) {
     themeSettings(theme),
     `the ${theme} theme settings did not survive the restart`,
   );
-  ctx.check(
-    "the telemetry toggle and the theme choice persist across a restart",
-  );
+  ctx.check("the theme choice persists across a restart");
 
   const legacyDir = path.join(ctx.home, "reviews", LEGACY_UUID);
   await ctx.page.locator(".review-titlebar-home").first().click();

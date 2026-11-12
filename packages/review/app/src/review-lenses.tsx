@@ -32,7 +32,6 @@ import { canvasQueryKeys } from "./canvas-query";
 import { useReviewSession } from "./host/review-session";
 import { checkoutUnavailable } from "./missing-checkout-banner";
 import { useReviewPanel, useReviewPanelStore } from "./review-panel";
-import { captureUiEvent } from "./ui-telemetry";
 
 /** A resolved selection, tagged with the comparison its own pins name so its
  * changed lines are counted there and not in the document's comparison. */
@@ -320,10 +319,6 @@ export function ReviewLensesProvider({
       error,
       select: (id) => {
         if (!lenses.some((item) => item.id === id && !item.unavailable)) return;
-        captureUiEvent(session, "diff_opened", {
-          kind: "structural",
-          via: "lens",
-        });
         panelStore.getState().selectLens({ id, version: snapshot.version });
       },
       clear: () => panelStore.getState().clearLens(),

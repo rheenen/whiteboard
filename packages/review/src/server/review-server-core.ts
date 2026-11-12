@@ -33,7 +33,6 @@ import { streamSSE } from "hono/streaming";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 
-import { mountFeedback } from "./feedback";
 import type { ReviewDesktopVerbRelay } from "./global-verb-relay";
 import {
   type ReviewHonoEnv,
@@ -96,7 +95,6 @@ export function createReviewServerApp(input: {
     await next();
   });
   app.get("/control", (context) => openControlEvents(context, input.relay));
-  mountFeedback(app);
   app.post("/control/result", async (context) => {
     const accepted = input.relay.acceptResult(
       // A rendered frame's PNG rides back in a result.
@@ -131,7 +129,7 @@ export interface WhiteboardCoreInput {
     store: ReviewStore;
     data: LocalReviewData;
   };
-  /** Desktop's: share sign-in and imports. */
+  /** Desktop's: `.whiteboard` file import. */
   sharing?: boolean;
   relay: ReviewDesktopVerbRelay;
   token: string;
@@ -211,7 +209,7 @@ export function createWhiteboardCore(input: WhiteboardCoreInput) {
     callbacks.render,
   );
 
-  // Desktop's sharing host mounts the publisher with the rest of sharing.
+  // Desktop's sharing host mounts file export with file import.
   if (!input.sharing) mountSharingPublisher(api, store, data);
 
   return {

@@ -4399,63 +4399,6 @@ it("stops comparing a worktree revision once a newer one starts", async () => {
   void data.close();
 });
 
-it("reports a created review with the origin its headers claim", async () => {
-  const { createReviewApi } = await import("./http.js");
-  const created: unknown[] = [];
-
-  const checkout = path.join(directory, "checkout");
-  execFileSync("git", ["init", "-q", checkout]);
-
-  const api = createReviewApi(
-    store,
-    new LocalReviewData(store),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    { onReviewCreated: (event) => created.push(event) },
-  );
-
-  const create = (title: string, headers: Record<string, string>) =>
-    api.request("/commands", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(
-        request({
-          type: "create",
-          title,
-          target: { kind: "project", repositoryPath: checkout },
-        }),
-      ),
-    });
-
-  expect(
-    (
-      await create("Example", {
-        "x-review-via": "mcp",
-        "x-review-agent": "codex",
-      })
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await create("Other", {
-        "x-review-via": "carrier-pigeon",
-      })
-    ).status,
-  ).toBe(200);
-
-  expect(created).toEqual([
-    {
-      reviewId: expect.any(String),
-      blocks: 0,
-      via: "mcp",
-      agentKind: "codex",
-    },
-    { reviewId: expect.any(String), blocks: 0, via: "other" },
-  ]);
-});
-
 function structuralSource(text: string): StructuralSource {
   const lines = text.split("\n");
 

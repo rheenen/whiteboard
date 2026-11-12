@@ -128,9 +128,6 @@ else
   node "$PROTOCOL_BUNDLER" "$EVENT_STREAM_OUTPUT" "$EVENT_STREAM_OUTPUT"
 fi
 if [[ "$DEV_FAST_ACTIVE" != "1" ]]; then
-  if [[ -n "${REVIEW_POSTHOG_KEY:-}" ]]; then
-    node "$MONOREPO_ROOT/packages/review/scripts/embed-posthog-key.mjs"
-  fi
   rebuild_review_desktop_outputs "$MONOREPO_ROOT" "$MONOREPO_ROOT/packages/review"
   node "$APP_DIR/scripts/copy-canvas.mjs"
 fi

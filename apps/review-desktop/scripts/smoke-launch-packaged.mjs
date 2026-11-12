@@ -50,7 +50,12 @@ export async function packagedBinary(app) {
 
   const product = JSON.parse(
     await readFile(
-      path.join(app, linux ? "resources" : "Contents/Resources", "app", "product.json"),
+      path.join(
+        app,
+        linux ? "resources" : "Contents/Resources",
+        "app",
+        "product.json",
+      ),
       "utf8",
     ),
   );
@@ -58,23 +63,6 @@ export async function packagedBinary(app) {
   return linux
     ? path.join(app, product.applicationName)
     : path.join(app, "Contents", "MacOS", product.nameShort);
-}
-
-/** How the telemetry smokes start Review: the packaged `app` when given, else this checkout's dev build. */
-export async function reviewLaunch({ app, stateRoot, debugPort }) {
-  if (!app)
-    return { command: "bash", args: [path.join(APP_DIR, "scripts", "run.sh")] };
-
-  return {
-    command: await packagedBinary(app),
-    args: [
-      "--disable-telemetry",
-      "--skip-welcome",
-      `--user-data-dir=${path.join(stateRoot, "user-data")}`,
-      `--extensions-dir=${path.join(stateRoot, "extensions")}`,
-      `--remote-debugging-port=${debugPort}`,
-    ],
-  };
 }
 
 const SERVER_READY_PATTERN = /\[Review Desktop\] server ready at https?:\/\//;
@@ -103,9 +91,13 @@ function hasRenderer(userDataDir) {
   try {
     // Match on the directory alone: a pattern starting with "--" would be read
     // as an option by BSD pgrep. The temp path is unique either way.
-    const matches = execFileSync("pgrep", [process.platform === "linux" ? "-fa" : "-fl", userDataDir], {
-      encoding: "utf8",
-    });
+    const matches = execFileSync(
+      "pgrep",
+      [process.platform === "linux" ? "-fa" : "-fl", userDataDir],
+      {
+        encoding: "utf8",
+      },
+    );
 
     return matches.split("\n").some((line) => line.includes("--type=renderer"));
   } catch {
@@ -156,13 +148,26 @@ export async function smokeLaunch({
   // A launch that finds a running instance hands its arguments over and exits 0
   // without opening anything. The throwaway user-data-dir is what keeps this a
   // real boot rather than a silent no-op.
-  const env = { ...process.env, ELECTRON_ENABLE_LOGGING: "1", DEV_REVIEW_HOME: path.join(userDataDir, "review-home"), DEV_REVIEW_IMPORT_FROM: "none" };
+  const env = {
+    ...process.env,
+    ELECTRON_ENABLE_LOGGING: "1",
+    DEV_REVIEW_HOME: path.join(userDataDir, "review-home"),
+    DEV_REVIEW_IMPORT_FROM: "none",
+  };
+
   delete env.ELECTRON_RUN_AS_NODE;
 
-  const child = spawn(binary, [`--user-data-dir=${userDataDir}`, `--extensions-dir=${path.join(userDataDir, "extensions")}`], {
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = spawn(
+    binary,
+    [
+      `--user-data-dir=${userDataDir}`,
+      `--extensions-dir=${path.join(userDataDir, "extensions")}`,
+    ],
+    {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
 
   let output = "";
   let mainLog = "";
@@ -171,7 +176,10 @@ export async function smokeLaunch({
   child.stdout.on("data", (chunk) => (output += chunk));
   child.stderr.on("data", (chunk) => (output += chunk));
   child.on("exit", (code, signal) => (exited = { code, signal }));
-  child.on("error", (error) => { output += error.message; exited = { code: null, signal: null }; });
+  child.on("error", (error) => {
+    output += error.message;
+    exited = { code: null, signal: null };
+  });
 
   const fail = (message) => {
     throw new Error(

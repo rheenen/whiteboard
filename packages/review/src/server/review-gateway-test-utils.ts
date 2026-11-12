@@ -211,7 +211,6 @@ export async function startGateway(
     heartbeatMs?: number;
     firstByteMs?: number;
     slowRouteMs?: number;
-    remoteEvent?(request: Request, reviewId: string): Promise<void>;
   } = {},
 ) {
   const home = options.home ?? path.join(root, "local");
@@ -240,7 +239,6 @@ export async function startGateway(
     ...(options.slowRouteMs !== undefined && {
       slowRouteMs: options.slowRouteMs,
     }),
-    ...(options.remoteEvent && { remoteEvent: options.remoteEvent }),
     log: (message) => logged.push(message),
   });
 

@@ -1,5 +1,4 @@
 import {
-  MAX_SHARE_BYTES,
   SHARE_FORMAT,
   type ShareBundle,
   type ShareSource,
@@ -116,18 +115,6 @@ async function cutExcerpts(
 // jsonb cannot store NUL.
 const excerptLines = (text: string) =>
   text.split(/\r?\n/).map((line) => line.replaceAll("\0", "\uFFFD"));
-
-/** The create request body, within the upload limit. */
-export function shareRequestBody(bundle: ShareBundle, requestId: string) {
-  const body = JSON.stringify({ requestId, bundle });
-
-  if (Buffer.byteLength(body) > MAX_SHARE_BYTES)
-    throw new ReviewInputError(
-      `Review exceeds the ${MAX_SHARE_BYTES / 1024 / 1024} MB sharing limit. Remove large images or maps, then retry.`,
-    );
-
-  return body;
-}
 
 /** Freeze one stored version before any asynchronous source reads. */
 export async function exportShare(input: {

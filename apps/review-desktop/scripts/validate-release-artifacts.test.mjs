@@ -11,7 +11,6 @@ import {
   assertMachOArch,
   assertPackagedProduct,
   assertUpdaterCompatibleApp,
-  buildManifest,
 } from "./validate-release-artifacts.mjs";
 
 const temporaryRoots = [];
@@ -26,43 +25,7 @@ const PRODUCT = {
   ...releaseIdentityFor("stable"),
   commit: "abc123",
   quality: "stable",
-  updateUrl: "https://update.dev.fast",
 };
-
-test("buildManifest emits the schema the update Worker serves", () => {
-  const now = new Date("2026-07-29T00:00:00.000Z");
-
-  const manifest = buildManifest({
-    version: "1.2.3",
-    commit: "abc123",
-    target: "darwin-arm64",
-    payloads: [
-      { bundle: "Review", artifact: "Review", sha256: "cafe" },
-      { bundle: "Whiteboard", artifact: "Whiteboard", sha256: "f00d" },
-    ],
-    now,
-  });
-
-  const review =
-    "https://update.dev.fast/releases/1.2.3/darwin-arm64/Review-darwin-arm64-1.2.3.zip";
-
-  assert.deepEqual(manifest, {
-    version: "1.2.3",
-    commit: "abc123",
-    url: review,
-    name: "1.2.3",
-    pub_date: "2026-07-29T00:00:00.000Z",
-    timestamp: now.getTime(),
-    sha256hash: "cafe",
-    bundles: {
-      Review: { url: review, sha256hash: "cafe" },
-      Whiteboard: {
-        url: "https://update.dev.fast/releases/1.2.3/darwin-arm64/Whiteboard-darwin-arm64-1.2.3.zip",
-        sha256hash: "f00d",
-      },
-    },
-  });
-});
 
 test(
   "assertMachOArch rejects a binary built for the other arch",
@@ -123,11 +86,11 @@ test("assertPackagedProduct rejects a mismatched commit", () => {
   );
 });
 
-test("assertPackagedProduct rejects a build without hardened update config", () => {
+test("assertPackagedProduct rejects a build with an update feed", () => {
   assert.throws(
     () =>
       assertPackagedProduct(
-        { ...PRODUCT, updateUrl: "" },
+        { ...PRODUCT, updateUrl: "https://updates.example" },
         { commit: "abc123" },
       ),
     /updateUrl/,

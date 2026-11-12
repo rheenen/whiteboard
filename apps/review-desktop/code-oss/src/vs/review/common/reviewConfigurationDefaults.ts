@@ -23,14 +23,6 @@
  */
 
 export const REVIEW_KEYMAP_SETTING = 'review.keymap';
-/** This build never sends usage data, crash dumps or error reports, and has
- * no setting to turn them on. */
-export const REVIEW_TELEMETRY_ENABLED: boolean = false;
-/** This build never shares whiteboards as links or signs in, and has no
- * setting to turn that on. Exporting and opening .whiteboard files works. */
-export const REVIEW_SHARING_ENABLED: boolean = false;
-/** Unregistered: settings.json only. */
-export const REVIEW_SERVICE_URL_SETTING = 'review.serviceUrl';
 export const REVIEW_SOFTWARE_MAP_SETTING = 'review.experimental.softwareMap.enabled';
 /** Code OSS's own setting, registered in `update.config.contribution.ts`. */
 export const REVIEW_SHOW_RELEASE_NOTES_SETTING = 'update.showReleaseNotes';

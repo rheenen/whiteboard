@@ -1,6 +1,5 @@
 import type { NormalizedSoftwareModel } from "@canvas/software-map/model";
 import type { PinnedSoftwareMapData } from "@canvas/software-map/SoftwareMap";
-import { createReviewAppSessionId } from "@canvas/tab-dwell-telemetry";
 import type {
   ReviewCanvasBridge,
   ReviewCanvasDiagnostic,
@@ -17,7 +16,6 @@ export interface ReviewSession {
   /** The board its requests name. */
   reviewId: string;
   review?: ReviewSessionData;
-  appSessionId: string;
   bridge: ReviewCanvasBridge;
   surface: ReviewSurface;
   softwareMapData?(
@@ -58,7 +56,6 @@ export function createReviewSession(
 
   return {
     reviewId,
-    appSessionId: bridge.appSessionId ?? createReviewAppSessionId(),
     bridge,
     surface: createReviewSurface(bridge),
     fetch: (endpoint, init) =>

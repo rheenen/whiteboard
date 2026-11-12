@@ -46,26 +46,8 @@ export function emitJsonEvent<T extends CliJsonEvent>(
   if (output.json) output.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
-/**
- * Reports a failure on both channels and returns the exit code.
- *
- * The human message always reaches stderr. Under --json the same message also
- * reaches stdout as a parseable error event, so an agent never has to read
- * prose to learn why a command failed.
- */
-export function failWithJsonError(
-  output: CliJsonOutput,
-  stage: string,
-  message: string,
-): number {
-  output.stderr.write(`${message}\n`);
-  emitJsonEvent(output, { event: "error", stage, message });
-
-  return 1;
-}
-
 // Flags that take a separate value. A value can look exactly like a flag, as in
-// `share --review "--json"`, so the scan must skip it.
+// `export --review "--json"`, so the scan must skip it.
 const VALUE_FLAGS = new Set(["--review", "--session", "--agent-session"]);
 
 /**

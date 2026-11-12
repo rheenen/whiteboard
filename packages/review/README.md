@@ -1,7 +1,7 @@
 # dev.fast Whiteboard
 
 The `@dev.fast/whiteboard` package provides the `whiteboard` CLI for headless review
-authoring and sharing. It requires Node 24. An npm install
+authoring. It requires Node 24. An npm install
 also provides `review` as an alias for `whiteboard`.
 `whiteboard server` runs without installing or starting Desktop.
 Whiteboard Desktop displays the review canvas; its server owns review
@@ -62,6 +62,16 @@ whiteboard app pick
 
 Use `whiteboard app pick --session <uuid>` to select a specific review. Bare
 `whiteboard app` is an alias for `whiteboard app launch`.
+
+To share a board, export it as a `.whiteboard` file and send the file:
+
+```sh
+whiteboard export --review <uuid> --out board.whiteboard
+```
+
+Whiteboard Desktop opens the file on a checkout of its repository, or
+read-only without one. Whiteboard has no accounts, uploads or share links,
+and sends no telemetry.
 
 `whiteboard info` is read-only: it lists active reviews bound to the current
 worktree, or every worktree in the repository with `--all`.

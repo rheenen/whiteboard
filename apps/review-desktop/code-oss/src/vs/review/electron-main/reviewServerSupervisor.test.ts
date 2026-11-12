@@ -32,7 +32,6 @@ test('the trusted product version overrides inherited environment values', () =>
 		token: 'token',
 		instanceId: 'instance',
 		appPid: 1234,
-		telemetryEnabled: true,
 		appSessionId: 'session',
 		channel: 'stable',
 	});
@@ -41,26 +40,6 @@ test('the trusted product version overrides inherited environment values', () =>
 	assert.equal(environment.DEV_FAST_REVIEW_APP_VERSION, '0.0.16');
 	assert.equal(environment.DEV_FAST_REVIEW_SERVER_ENTRY, '/review/server.js');
 	assert.equal(environment.DEV_FAST_REVIEW_SERVER_PORT, '4321');
-	assert.equal(environment.DEV_FAST_REVIEW_TELEMETRY_DISABLED, undefined);
-});
-
-test('the sharing setting turns sharing off, and turning it on keeps an off from the shell', () => {
-	const options = {
-		applicationEnvironment: {},
-		appVersion: '0.0.16',
-		serverEntry: '/review/server.js',
-		port: 4321,
-		token: 'token',
-		instanceId: 'instance',
-		appPid: 1234,
-		telemetryEnabled: true,
-		appSessionId: 'session',
-		channel: 'stable',
-	} as const;
-
-	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: false }).DEV_REVIEW_DESKTOP_SHARING, 'off');
-	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: {}, sharingEnabled: true }).DEV_REVIEW_DESKTOP_SHARING, 'on');
-	assert.equal(createReviewServerEnvironment({ ...options, resolvedEnvironment: { DEV_REVIEW_SHARING_DISABLED: '1' }, sharingEnabled: true }).DEV_REVIEW_SHARING_DISABLED, '1');
 });
 
 for (const protocol of ['dev-fast-review', 'dev-fast-review-preview']) {
@@ -75,7 +54,6 @@ for (const protocol of ['dev-fast-review', 'dev-fast-review-preview']) {
 			token: 'token',
 			instanceId: 'instance',
 			appPid: 1234,
-			telemetryEnabled: true,
 			appSessionId: 'session',
 			channel: 'stable',
 		});
@@ -83,7 +61,7 @@ for (const protocol of ['dev-fast-review', 'dev-fast-review-preview']) {
 	});
 }
 
-test('the server inherits the app session id, channel and crash dump directory the supervisor chose', () => {
+test('the server inherits the app session id and channel the supervisor chose', () => {
 	const environment = createReviewServerEnvironment({
 		applicationEnvironment: { DEV_FAST_REVIEW_APP_SESSION_ID: 'stale', DEV_FAST_REVIEW_CHANNEL: 'stable' },
 		resolvedEnvironment: { DEV_FAST_REVIEW_APP_SESSION_ID: 'shell', DEV_FAST_REVIEW_CHANNEL: 'dev' },
@@ -93,15 +71,12 @@ test('the server inherits the app session id, channel and crash dump directory t
 		token: 'token',
 		instanceId: 'instance',
 		appPid: 1234,
-		telemetryEnabled: true,
 		appSessionId: 'session-1',
 		channel: 'preview',
-		crashDumpsDir: '/user-data/review-crashes',
 	});
 
 	assert.equal(environment.DEV_FAST_REVIEW_APP_SESSION_ID, 'session-1');
 	assert.equal(environment.DEV_FAST_REVIEW_CHANNEL, 'preview');
-	assert.equal(environment.DEV_FAST_REVIEW_CRASH_DUMPS_DIR, '/user-data/review-crashes');
 });
 
 class FakeServerProcess implements IReviewServerProcess {

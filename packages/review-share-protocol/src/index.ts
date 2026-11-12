@@ -2,13 +2,6 @@ import { z } from "zod";
 
 export const SHARE_FORMAT = "review-share/2";
 
-/** UTF-8 bytes of a bundle's JSON, as uploaded and as stored. */
-export const MAX_SHARE_BYTES = 16 * 1024 * 1024;
-
-export const shareIdSchema = z.uuid();
-
-export const capabilitySchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-
 export const sharePathSchema = z
   .string()
   .min(1)
@@ -409,88 +402,3 @@ export type ShareBundle = z.infer<typeof shareBundleSchema>;
 export type ShareSource = z.infer<typeof shareSourceSchema>;
 
 export type ShareAlignment = z.infer<typeof shareAlignmentSchema>;
-
-export const createShareSchema = z.object({
-  requestId: z.uuid(),
-  bundle: shareBundleSchema,
-});
-
-export const shareCreatedSchema = z.strictObject({
-  shareId: shareIdSchema,
-  url: z.url(),
-});
-
-const shareSizeSchema = z.number().int().positive().max(MAX_SHARE_BYTES);
-
-export const shareRevisionRefSchema = z.object({
-  id: shareIdSchema,
-  version: z.number().int().nonnegative(),
-  createdAt: z.number(),
-});
-
-export const shareRevisionSchema = shareRevisionRefSchema.extend({
-  size: shareSizeSchema,
-  url: z.url(),
-});
-
-export const shareRevisionsSchema = z.object({
-  latest: shareIdSchema,
-  items: z.array(shareRevisionSchema),
-});
-
-export type ShareRevisions = z.infer<typeof shareRevisionsSchema>;
-
-export const sharedMetaSchema = z.object({
-  sender: z.strictObject({ login: z.string().min(1).max(256) }),
-  sharedAt: z.number(),
-  size: shareSizeSchema,
-  revision: shareRevisionRefSchema,
-  latest: shareIdSchema,
-});
-
-export type SharedMeta = z.infer<typeof sharedMetaSchema>;
-
-export function shareLink(
-  origin: string,
-  capability: string,
-  revision?: string,
-): string {
-  const url = new URL(`/s/${capabilitySchema.parse(capability)}`, origin);
-
-  if (revision !== undefined)
-    url.searchParams.set("rev", shareIdSchema.parse(revision));
-
-  return url.href;
-}
-
-export type ShareLink = {
-  origin: string;
-  capability: string;
-  revision?: string;
-};
-
-export function parseShareLink(value: string): ShareLink {
-  const url = new URL(value);
-
-  if (
-    url.protocol !== "https:" ||
-    url.username ||
-    url.password ||
-    url.hash ||
-    [...url.searchParams.keys()].some((key) => key !== "app" && key !== "rev")
-  )
-    throw new Error("Use an HTTPS Whiteboard share link.");
-
-  const link: ShareLink = {
-    origin: url.origin,
-    capability: capabilitySchema.parse(
-      /^\/s\/([^/]+)$/.exec(url.pathname)?.[1],
-    ),
-  };
-
-  const revision = url.searchParams.get("rev");
-
-  if (revision !== null) link.revision = shareIdSchema.parse(revision);
-
-  return link;
-}

@@ -93,10 +93,6 @@ jobs:
           tar --zstd -xf linux-packages/linux-publication.tar.zst -C linux-repository
           python3 apps/review-desktop/scripts/publish-linux-repository.py \
             --directory linux-repository --bucket "$R2_BUCKET" --channel "$CHANNEL" --promote-only
-          if [ "$CHANNEL" = preview ]; then
-            curl -fsS https://install.dev.fast/repos/whiteboard-preview.repo | grep -F 'baseurl=https://install.dev.fast/repos/preview/rpm/x86_64/'
-            curl -fsSI https://install.dev.fast/repos/preview/arch/x86_64/whiteboard-preview.db | grep -q '^HTTP/[0-9.]* 302'
-          fi
       # The first platform to publish takes the release out of draft.
       - name: Publish the GitHub Release
         if: inputs.release_tag != ''

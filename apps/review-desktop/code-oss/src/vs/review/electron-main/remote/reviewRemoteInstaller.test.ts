@@ -125,7 +125,7 @@ const slowTar = (root: string, body: string) => onPath(root, "tar", `case "$1" i
 const fakeCurl = (root: string, source: string) =>
 	onPath(root, "curl", `while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; url=$1; shift; done\nprintf '%s\\n' "$url" >> ${shellQuote(join(root, "fetched"))}\nexec cp ${shellQuote(source)} "$out"\n`);
 
-const RELEASE_URL = `https://install.dev.fast/releases/${VERSION}/remote/whiteboard-remote-${VERSION}-linux-arm64.tar.xz`;
+const RELEASE_URL = `https://releases.example/releases/${VERSION}/remote/whiteboard-remote-${VERSION}-linux-arm64.tar.xz`;
 
 test("a DEV_REVIEW_HOME the remote cannot normalise is refused by the probe and the uninstall, before anything is written", async (t) => {
 	const f = await fixture(t);
