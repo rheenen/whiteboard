@@ -72,7 +72,6 @@ export function testReviewSession(
       pins: { base: "a".repeat(40), head: "b".repeat(40) },
       historicalRevision: null,
       updatedAtMs: Date.now(),
-      traces: new Map(),
       place: async () => ({ siblings: [] }),
       stack: async () => ({ layers: [] }),
       createBranchReview: async () => "",
@@ -102,7 +101,6 @@ export function testApiDocumentData(blocks: Block[]): ApiDocumentData {
     commits: [],
     anchors: new Map(),
     images: new Map(),
-    traces: new Map(),
     boards: new Map(),
     maps: new Map(),
   };

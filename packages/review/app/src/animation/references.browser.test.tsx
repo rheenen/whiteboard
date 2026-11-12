@@ -177,7 +177,6 @@ async function mount(reference: Reference) {
         progress,
         commits: [],
         images: {},
-        traces: {},
         maps: {},
       }),
     );

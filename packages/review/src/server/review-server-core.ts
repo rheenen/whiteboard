@@ -3,7 +3,6 @@ import type {
   ReviewServerHealth,
   ReviewServerHealthWithToken,
 } from "@dev.fast/review-protocol";
-import { traceMachineEnabled } from "@dev.fast/trace-core";
 import { ReviewInputError } from "@dev.fast/whiteboard-document";
 import {
   type AskAgentLauncher,
@@ -202,7 +201,6 @@ export function createWhiteboardCore(input: WhiteboardCoreInput) {
     callbacks.open,
     input.sharing,
     callbacks.capabilities,
-    () => traceMachineEnabled(),
     input.status,
     input.hooks,
     askThreads && {

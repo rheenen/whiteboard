@@ -195,7 +195,6 @@ export function mountSharingHost(
       });
 
       void startLogin({
-        traces: false,
         stdout: discard,
         stderr: discard,
         openUrl: options.openUrl,

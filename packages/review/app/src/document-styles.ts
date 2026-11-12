@@ -14,7 +14,7 @@ import { tokens } from "./tokens.stylex";
 // The review document: the article column and the prose it renders. Prose
 // styles hold only inside a document, so a renderer used elsewhere keeps the
 // browser's defaults. The article carries documentMarker, a block its
-// `data-review-node-id` and a Markdown or trace quote block proseMarker.
+// `data-review-node-id` and a Markdown block proseMarker.
 
 const inDocument = () => stylex.when.ancestor(":is(*)", documentMarker);
 
@@ -23,7 +23,7 @@ const inDocument = () => stylex.when.ancestor(":is(*)", documentMarker);
 const inDocumentBlock = () =>
   `${inDocument()}:is([data-review-node-id] > *, [data-board-markdown] > *)`;
 
-// Inside a Markdown or trace quote block.
+// Inside a Markdown block.
 const inProse = () =>
   `${inDocument()}${stylex.when.ancestor(":is(*)", proseMarker)}`;
 

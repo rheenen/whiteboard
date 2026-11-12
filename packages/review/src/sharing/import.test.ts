@@ -140,16 +140,8 @@ it("copies a share into a board the recipient edits like their own", async () =>
   const app = createReviewApi(recipient.store, recipient.data);
   const json = async (url: string) => (await app.request(url)).json();
 
-  const quote = copy.document.find((block) => block.type === "trace_quote");
   const map = copy.document.find((block) => block.type === "software_map");
 
-  expect(
-    (
-      await json(
-        `/${reviewId}/resources/${quote?.type === "trace_quote" && quote.traceId}`,
-      )
-    ).events,
-  ).toHaveLength(2);
   expect(
     (
       await json(

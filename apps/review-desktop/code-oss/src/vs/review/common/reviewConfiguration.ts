@@ -93,12 +93,12 @@ configurationRegistry.registerConfiguration({
 				localize('review.readingFont.sans', "Inter, the interface face."),
 			],
 			default: 'serif',
-			description: localize('review.readingFont', "The face for whiteboard prose, Ask answers and trace notes."),
+			description: localize('review.readingFont', "The face for whiteboard prose and Ask answers."),
 		},
 		[REVIEW_READING_FONT_FAMILY_SETTING]: {
 			type: 'string',
 			default: '',
-			description: localize('review.readingFontFamily', "A font family for whiteboard prose, Ask answers and trace notes. When set, it replaces the reading typeface."),
+			description: localize('review.readingFontFamily', "A font family for whiteboard prose and Ask answers. When set, it replaces the reading typeface."),
 		},
 		// Diffs merge `diffEditor.*` over `editor.*`.
 		[DIFF_EDITOR_FONT_SIZE_SETTING]: {

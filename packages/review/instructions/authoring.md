@@ -32,7 +32,7 @@ For each board, follow these first five steps in order, with no tool calls beyon
       - `flow_diagram` if the interesting part is branches, retries or state transitions
       - `database_lens` if the interesting part is a schema change to the data stores, and/or who reads/writes it
     - if the change is mostly a new/changed contract, show the key types / interfaces as `code_peek`(s)
-      plus the main decisions and tradeoffs, and alternatives considered if you have evidence for them (trace, PR discussion). skip for small changes whose design is self-evident.
+      plus the main decisions and tradeoffs, and alternatives considered if you have evidence for them (PR discussion, commit messages). skip for small changes whose design is self-evident.
   - implementation: how the code delivers the design, at the level of functions and files. walk the changed code in the order a reader should follow it, starting with the entry point.
     - `call_stack_diff` for the old vs. new path through user flows. always root the flows in the user/agent entry point (eg a button click, CLI command, etc.), including unchanged nodes along the way.
     - `code_peek` for the few spots that carry the mechanism or an invariant; link everything else inline

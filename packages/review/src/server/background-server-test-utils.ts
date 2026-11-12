@@ -31,7 +31,6 @@ export function isolatedEnv(root: string): NodeJS.ProcessEnv {
   return {
     ...env,
     HOME: home,
-    TRACE_HOME_DIR: home,
     DEV_REVIEW_HOME: path.join(home, ".dev"),
     DEV_FAST_REVIEW_TELEMETRY_DISABLED: "1",
     DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",

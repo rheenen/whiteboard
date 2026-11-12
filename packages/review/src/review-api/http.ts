@@ -109,7 +109,6 @@ import {
   commandSchema,
   inspectSnapshot,
 } from "./store.js";
-import { listPinnedTraces, readStoredTrace } from "./traces.js";
 
 export interface AskHost {
   threads: AskThreads;
@@ -208,8 +207,6 @@ export function createReviewApi(
     desktopAvailable: Boolean(open),
     softwareMapEnabled: false,
   }),
-  // Read per request: capture can change from outside this server.
-  traceEnabled: () => Promise<boolean> = async () => false,
   /** Which server this is, for whiteboard_status. */
   status: () => JsonObject = () => ({}),
   hooks: ReviewApiHooks = {},
@@ -334,24 +331,17 @@ export function createReviewApi(
 
   // Server-owned state only: asking the Desktop canvas would let a stalled
   // renderer block tool listing and the first instructions call.
-  const instructionContext = async () => ({
-    traceEnabled: await traceEnabled(),
+  const instructionContext = () => ({
     animationsEnabled: animationsEnabled(),
   });
 
   app.get("/authoring", async (context) => {
-    const instructions = await instructionContext();
-
-    return context.json(
-      authoringTools(instructions.traceEnabled, instructions.animationsEnabled),
-    );
+    return context.json(authoringTools(animationsEnabled()));
   });
   app.get("/instructions", async (context) => {
     const { topic } = instructionsQuerySchema.parse(context.req.query());
 
-    return context.json(
-      await renderInstructions(topic, await instructionContext()),
-    );
+    return context.json(await renderInstructions(topic, instructionContext()));
   });
   app.get("/:id/progress", async (context) => {
     if (!data) throw new ReviewInputError("Source data is unavailable.", 409);
@@ -804,46 +794,6 @@ export function createReviewApi(
   });
 
   if (data) {
-    const traceQuery = readQuerySchemas.maps.extend({
-      storage: z.enum(["s3", "hosted"]).optional(),
-      trace: z.string().min(1).optional(),
-    });
-
-    // Traces are stored beside the review's own repository.
-    const tracePins = async (id: string, version?: number) => {
-      const snapshot = readReview(id, version);
-
-      return snapshot.pins ?? (await data.documentPins(snapshot));
-    };
-
-    app.get("/:id/agent-traces", async (context) => {
-      const query = traceQuery.parse(context.req.query());
-      const pins = await tracePins(context.req.param("id"), query.version);
-
-      return context.json(
-        await listPinnedTraces(
-          store.repositoryPath(pins.repositoryId),
-          pins,
-          query.storage,
-        ),
-      );
-    });
-    app.get("/:id/agent-traces/:sessionId", async (context) => {
-      const query = traceQuery.parse(context.req.query());
-      const pins = await tracePins(context.req.param("id"), query.version);
-
-      const result = await readStoredTrace(
-        store.repositoryPath(pins.repositoryId),
-        context.req.param("sessionId"),
-        query.trace,
-        query.storage,
-      );
-
-      if (!result.ok)
-        return context.json({ ok: false, error: result.error }, result.status);
-
-      return context.json(result);
-    });
     app.post("/:id/navigator", writable, async (context) => {
       const input = readQuerySchemas.file
         .omit({ side: true })

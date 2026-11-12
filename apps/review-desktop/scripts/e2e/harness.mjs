@@ -680,9 +680,9 @@ export const DIAGRAM_REVIEW_TITLE = "Diagram review";
 
 /**
  * A review with every interactive diagram: a sequence and a database lens with
- * guided tours, a trace, and a software map on both sides. Its prose links into
- * the order service's source, so it gets a repository of its own holding that
- * source; the trace and map upload against its commits.
+ * guided tours, and a software map on both sides. Its prose links into the
+ * order service's source, so it gets a repository of its own holding that
+ * source; the maps upload against its commits.
  */
 export async function createDiagramReview(ctx) {
   const fixture = async (name) =>
@@ -693,9 +693,8 @@ export async function createDiagramReview(ctx) {
       ),
     );
 
-  const [authored, trace, model, source] = await Promise.all([
+  const [authored, model, source] = await Promise.all([
     fixture("document.json"),
-    fixture("trace.json"),
     fixture("software-map.json"),
     fixture("source.json"),
   ]);
@@ -740,14 +739,7 @@ export async function createDiagramReview(ctx) {
     await ctx.apiOk("/reviews-api/repositories", "POST", { path: repo })
   ).id;
 
-  const ids = new Map([["fixture-trace", randomUUID()]]);
-
-  await ctx.apiOk("/reviews-api/resources", "POST", {
-    id: ids.get("fixture-trace"),
-    repositoryId,
-    kind: "trace",
-    trace,
-  });
+  const ids = new Map();
 
   for (const side of ["base", "head"]) {
     const id = randomUUID();
@@ -765,7 +757,7 @@ export async function createDiagramReview(ctx) {
 
   const blocks = JSON.parse(
     JSON.stringify(authored.document).replace(
-      /"(fixture-(?:trace|map-base|map-head))"/g,
+      /"(fixture-map-(?:base|head))"/g,
       (_, alias) => JSON.stringify(ids.get(alias)),
     ),
   );
@@ -943,10 +935,11 @@ export const tabSelected = (ctx, label, page = ctx.page) =>
     `the ${label} tab to be active`,
   );
 
-/** Waits for the session to show `view`: review, diff or trace. */
+/** Waits for the session to show `view`: review, diff or map. */
 export const inView = (ctx, view, page = ctx.page) =>
   ctx.until(
-    async () => (await page.locator(`.review-view-region--${view}`).count()) > 0,
+    async () =>
+      (await page.locator(`.review-view-region--${view}`).count()) > 0,
     `the ${view} view to be shown`,
   );
 
@@ -962,13 +955,6 @@ export async function scopeToCommit(ctx, subject, page = ctx.page) {
     .getByRole("menuitemradio")
     .filter({ hasText: subject })
     .click();
-}
-
-/** Opens the Trace view from the peek of the trace quote `link`. */
-export async function openFullTrace(ctx, link, page = ctx.page) {
-  await link.click();
-  await page.getByRole("button", { name: "Full Trace" }).click();
-  await inView(ctx, "trace", page);
 }
 
 /** Dismisses the workbench's toasts, such as the usage-data notice. */

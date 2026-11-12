@@ -35,11 +35,6 @@ async function copySources(sourceRoot: string) {
       path.join(packageRoot, "..", "json", "src", name),
       path.join(sourceRoot, name),
     );
-
-  await copyFile(
-    path.join(packageRoot, "..", "trace-protocol", "src", "contracts.ts"),
-    path.join(sourceRoot, "trace-contracts.ts"),
-  );
 }
 
 const temporaryDirectories: string[] = [];

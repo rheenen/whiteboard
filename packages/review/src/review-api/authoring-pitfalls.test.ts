@@ -7,6 +7,7 @@ import path from "node:path";
 import { type JsonValue, parseJsonText } from "@dev.fast/review-protocol";
 import {
   type Pins,
+  TRACE_QUOTES_UNSUPPORTED,
   elements,
   rangeAnchor,
   selectionReferences,
@@ -14,8 +15,6 @@ import {
 import {
   FIXTURE_IMAGE_ID,
   FIXTURE_MAP_ID,
-  FIXTURE_TRACE_EVENT_ID,
-  FIXTURE_TRACE_ID,
   readBlockFixtures,
 } from "@review/fixtures/blocks/fixtures.js";
 import type { Hono } from "hono";
@@ -127,7 +126,6 @@ beforeEach(async () => {
   app = createReviewApi(
     local.store,
     local.data,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -675,22 +673,6 @@ describe("the fixtures are what the API accepts", () => {
       ).toString("base64"),
     };
 
-    const trace = {
-      id: randomUUID(),
-      repositoryId: pins.repositoryId,
-      kind: "trace",
-      trace: {
-        label: "Fixture conversation",
-        events: [
-          {
-            id: FIXTURE_TRACE_EVENT_ID,
-            role: "assistant",
-            text: "Please queue the order once the row is written.",
-          },
-        ],
-      },
-    };
-
     const map = {
       id: randomUUID(),
       repositoryId: pins.repositoryId,
@@ -721,7 +703,7 @@ describe("the fixtures are what the API accepts", () => {
       },
     };
 
-    for (const upload of [image, trace, map]) {
+    for (const upload of [image, map]) {
       const uploaded = await post("/resources", upload);
 
       expect({ status: uploaded.status, body: uploaded.body }).toMatchObject({
@@ -731,7 +713,6 @@ describe("the fixtures are what the API accepts", () => {
 
     const resourceIds = {
       [FIXTURE_IMAGE_ID]: image.id,
-      [FIXTURE_TRACE_ID]: trace.id,
       [FIXTURE_MAP_ID]: map.id,
     };
 
@@ -747,7 +728,21 @@ describe("the fixtures are what the API accepts", () => {
         ),
       );
 
-    for (const [type, samples] of await readBlockFixtures())
+    const fixtures = await readBlockFixtures();
+
+    // Stored boards keep their trace quotes, but no new one is written.
+    for (const sample of fixtures.get("trace_quote") ?? []) {
+      const result = await insert(substitute(sample));
+
+      expect({ status: result.status, body: result.body }).toMatchObject({
+        status: 400,
+        body: { error: TRACE_QUOTES_UNSUPPORTED },
+      });
+    }
+
+    fixtures.delete("trace_quote");
+
+    for (const [type, samples] of fixtures)
       for (const sample of samples) {
         const result = await insert(substitute(sample));
 

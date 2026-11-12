@@ -101,9 +101,8 @@ export interface IReviewDesktopConnectionService {
 	applyCliInstall(request: {
 		autoUpdate?: boolean;
 		shim?: boolean;
-		trace?: true | { endpoint?: string; bucket?: string; key?: string; secret?: string };
 	}): Promise<ReviewCliInstallApplyResponse>;
-	removeCliInstall(request: { shim?: boolean; trace?: true }): Promise<void>;
+	removeCliInstall(request: { shim?: boolean }): Promise<void>;
 	removeLegacySkills(): Promise<void>;
 	finishCliInstallUpdate(): Promise<void>;
 	declineCliInstall(): Promise<void>;
@@ -409,7 +408,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 	async applyCliInstall(request: {
 		autoUpdate?: boolean;
 		shim?: boolean;
-		trace?: true | { endpoint?: string; bucket?: string; key?: string; secret?: string };
 	}): Promise<ReviewCliInstallApplyResponse> {
 		await this.initialize();
 		const response = await fetch(`${this.serverUrl}/install/apply`, {
@@ -421,7 +419,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 			body: JSON.stringify({
 				...(request.autoUpdate ? { autoUpdate: true } : {}),
 				...(request.shim !== undefined ? { shim: request.shim } : {}),
-				...(request.trace !== undefined ? { trace: request.trace } : {}),
 			}),
 			signal: AbortSignal.timeout(120_000),
 		});
@@ -439,7 +436,7 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 		return parseReviewCliInstallApplyResponse(payload);
 	}
 
-	async removeCliInstall(request: { shim?: boolean; trace?: true }): Promise<void> {
+	async removeCliInstall(request: { shim?: boolean }): Promise<void> {
 		await this.initialize();
 		const response = await fetch(`${this.serverUrl}/install/remove`, {
 			method: "POST",
@@ -449,7 +446,6 @@ export class ReviewDesktopConnectionService extends Disposable implements IRevie
 			},
 			body: JSON.stringify({
 				...(request.shim ? { shim: true } : {}),
-				...(request.trace ? { trace: true } : {}),
 			}),
 			signal: AbortSignal.timeout(30_000),
 		});

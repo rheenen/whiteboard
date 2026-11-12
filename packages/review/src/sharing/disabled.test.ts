@@ -87,7 +87,7 @@ it("follows the Desktop setting through the user's marker, both ways", async () 
 
   applyDesktopSharingSetting({ ...env, DEV_REVIEW_DESKTOP_SHARING: "off" });
   expect(isSharingDisabled(root, env)).toBe(true);
-  // A process that the Desktop did not start, such as an agent trace hook.
+  // A process that the Desktop did not start, such as an agent's CLI call.
   expect(hostedStoreDisabled(env)).toBe(true);
 
   applyDesktopSharingSetting(env);
@@ -207,7 +207,6 @@ it.each([
   ["share", "--review", "any"],
   ["share", "revoke", "any"],
   ["login"],
-  ["login", "--traces"],
   ["whoami"],
 ])("exits 2 before any network call: whiteboard %s", async (...argv) => {
   const stateDir = await scratch();

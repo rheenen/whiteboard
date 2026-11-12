@@ -58,7 +58,6 @@ beforeEach(async () => {
     undefined,
     undefined,
     undefined,
-    undefined,
     () => true,
   );
 

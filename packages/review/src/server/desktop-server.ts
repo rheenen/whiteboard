@@ -440,8 +440,6 @@ export function createGlobalReviewServer(
 
     if (request.autoUpdate) applyInput.autoUpdate = true;
 
-    if (request.trace !== undefined) applyInput.trace = request.trace;
-
     if (discovery.cliPath) applyInput.cliPath = discovery.cliPath;
 
     if (discovery.cliRuntimePath) {
@@ -467,8 +465,6 @@ export function createGlobalReviewServer(
     const removeInput: Parameters<typeof removeCliInstall>[0] = {};
 
     if (request.shim) removeInput.shim = true;
-
-    if (request.trace) removeInput.trace = true;
     const result = await removeCliInstall(removeInput);
 
     return serverJson(200, { ok: true, output: result.output });

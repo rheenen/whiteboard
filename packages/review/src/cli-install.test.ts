@@ -14,14 +14,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import type { ReviewCliInstallStamp } from "@dev.fast/review-protocol";
-import {
-  enableTraceRepository,
-  installClaudeTraceHook,
-  traceMachineStatus,
-  traceRepositoryStatus,
-  traceScope,
-  writePrivateJsonAtomic,
-} from "@dev.fast/trace-core";
+import { writePrivateJsonAtomic } from "@dev.fast/trace-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -99,106 +92,117 @@ describe("skipCliInstall", () => {
   );
 });
 
-describe("trace capture installation", () => {
-  it("recognizes an existing bucket install at its original paths without migration or login", async () => {
-    const homeDir = await temporaryHome("review-legacy-trace-");
-    const configDir = path.join(homeDir, ".config", "dev-trace");
-    await mkdir(configDir, { recursive: true });
+/** A Claude hook the way builds with trace capture installed it. */
+async function writeOldClaudeHook(
+  homeDir: string,
+  command: string,
+): Promise<string> {
+  const settings = path.join(homeDir, ".claude", "settings.json");
+  await mkdir(path.dirname(settings), { recursive: true });
+  await writeFile(
+    settings,
+    JSON.stringify({
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: `${command} trace hook SessionStart`,
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
 
-    const credentials =
-      'TRACE_R2_ENDPOINT="https://storage.example.invalid"\nTRACE_R2_BUCKET="existing-traces"\nTRACE_R2_ACCESS_KEY_ID="fixture-key"\nTRACE_R2_SECRET_ACCESS_KEY="fixture-secret"\n';
+  return settings;
+}
 
-    const settings = JSON.stringify({
+/** A repository whose hooks path earlier builds pointed at their trace hooks. */
+async function writeOldGitHooks(homeDir: string): Promise<string> {
+  const repo = path.join(homeDir, "repo");
+  const run = promisify(execFile);
+  await run("git", ["init", "--quiet", repo]);
+  const stateDir = path.join(repo, ".git", "dev-fast", "trace-hooks");
+  const hooks = path.join(stateDir, "hooks");
+  await mkdir(hooks, { recursive: true });
+  await writeFile(
+    path.join(hooks, "pre-push"),
+    "#!/bin/sh\n'whiteboard' trace git-hook pre-push \"$@\" || true\n",
+  );
+  await writeFile(
+    path.join(stateDir, "state.json"),
+    JSON.stringify({
       version: 1,
-      enabled: true,
-      autoActivateRepositories: true,
-    });
+      root: repo,
+      managedHooksPath: hooks,
+      previousHooksPath: path.join(repo, ".git", "hooks"),
+      previousHookDirectory: path.join(repo, ".git", "hooks"),
+      previousWasConfigured: false,
+      command: "'whiteboard'",
+    }),
+  );
+  await run("git", ["-C", repo, "config", "core.hooksPath", hooks]);
+  const registry = path.join(homeDir, ".config", "dev-trace");
+  await mkdir(registry, { recursive: true });
+  await writeFile(
+    path.join(registry, "repositories.json"),
+    JSON.stringify([repo]),
+  );
 
-    await writeFile(path.join(configDir, "env"), credentials, { mode: 0o600 });
-    await writeFile(path.join(configDir, "settings.json"), settings);
+  return repo;
+}
 
-    const status = await resolveCliInstallStatus({
-      packageRoot,
-      homeDir,
-      env: { DEV_REVIEW_HOME: path.join(homeDir, ".dev") },
-    });
+async function hooksPathOf(repo: string): Promise<string | undefined> {
+  return promisify(execFile)("git", [
+    "-C",
+    repo,
+    "config",
+    "--local",
+    "core.hooksPath",
+  ]).then(
+    ({ stdout }) => stdout.trim(),
+    () => undefined,
+  );
+}
 
-    expect(status.trace).toMatchObject({
-      enabled: true,
-      configured: true,
-      bucket: "existing-traces",
-      autoActivateRepositories: true,
-    });
-    expect(JSON.stringify(status)).not.toContain("fixture-secret");
-    expect(await readFile(path.join(configDir, "env"), "utf8")).toBe(
-      credentials,
-    );
-    expect(await readFile(path.join(configDir, "settings.json"), "utf8")).toBe(
-      settings,
-    );
+describe("hooks from builds with trace capture", () => {
+  it("are removed by the startup resync, once", async () => {
+    const homeDir = await temporaryHome("review-old-trace-hooks-");
+    const env = { DEV_REVIEW_HOME: path.join(homeDir, ".dev") };
+    const settings = await writeOldClaudeHook(homeDir, "whiteboard");
+    const repo = await writeOldGitHooks(homeDir);
+
+    await writePrivateJsonAtomic(cliInstallStampPath(env), {
+      consent: "granted",
+      fingerprint: "old",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+    } satisfies ReviewCliInstallStamp);
+
+    const resync = () =>
+      applyCliInstall({ packageRoot, homeDir, env, autoUpdate: true });
+
+    expect((await resync()).code).toBe(0);
+    expect(JSON.parse(await readFile(settings, "utf8"))).toEqual({ hooks: {} });
+    expect(await hooksPathOf(repo)).toBeUndefined();
+
+    const after = await readFile(settings, "utf8");
+    expect(await resync()).toEqual({ code: 0, output: "" });
+    expect(await readFile(settings, "utf8")).toBe(after);
   });
 
-  it("writes a version-2 profile for a machine with no legacy files", async () => {
-    const homeDir = await temporaryHome("review-fresh-trace-");
+  it("are removed by uninstall, without consent on record", async () => {
+    const homeDir = await temporaryHome("review-old-trace-hooks-");
+    const env = { DEV_REVIEW_HOME: path.join(homeDir, ".dev") };
+    const settings = await writeOldClaudeHook(homeDir, "whiteboard");
+    const repo = await writeOldGitHooks(homeDir);
 
-    const env: NodeJS.ProcessEnv = {
-      DEV_REVIEW_HOME: path.join(homeDir, ".dev"),
-      TRACE_R2_MODE: "mock",
-    };
+    await removeCliInstall({ shim: true, homeDir, env });
 
-    const applied = await applyCliInstall({
-      packageRoot,
-      homeDir,
-      env,
-      trace: {
-        endpoint: "mock://endpoint",
-        bucket: "fresh-bucket",
-        key: "fresh-key-id",
-        secret: "fresh-secret-value",
-      },
-    });
-
-    expect(applied.code).toBe(0);
-    const configPath = path.join(homeDir, ".dev", "trace", "config.json");
-    expect(JSON.parse(await readFile(configPath, "utf8"))).toMatchObject({
-      version: 2,
-      "current-store": "s3",
-      stores: {
-        s3: {
-          bucket: "fresh-bucket",
-          accessKeyId: "fresh-key-id",
-          capture: { enabled: true, autoActivateRepositories: true },
-        },
-      },
-    });
-    expect(
-      await readFile(path.join(homeDir, ".config", "dev-trace", "env"), "utf8")
-        .then(() => true)
-        .catch(() => false),
-    ).toBe(false);
-    const status = await resolveCliInstallStatus({ packageRoot, homeDir, env });
-    expect(status.trace).toMatchObject({
-      enabled: true,
-      configured: true,
-      bucket: "fresh-bucket",
-      credentialsSource: "profile",
-      captureSource: "profile",
-      storageMode: "s3",
-    });
-    expect(JSON.stringify(status)).not.toContain("fresh-secret-value");
-
-    await removeCliInstall({ trace: true, homeDir, env });
-
-    const disabled = await resolveCliInstallStatus({
-      packageRoot,
-      homeDir,
-      env,
-    });
-
-    expect(disabled.trace).toMatchObject({ enabled: false, configured: true });
-    expect(
-      JSON.parse(await readFile(configPath, "utf8")).stores.s3.secretAccessKey,
-    ).toBe("fresh-secret-value");
+    expect(JSON.parse(await readFile(settings, "utf8"))).toEqual({ hooks: {} });
+    expect(await hooksPathOf(repo)).toBeUndefined();
   });
 });
 
@@ -596,7 +600,7 @@ describe("installed launcher runtime selection", () => {
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
     delete env.DEV_REVIEW_HOME;
 
-    const result = await promisify(execFile)(shim, ["trace", "status"], {
+    const result = await promisify(execFile)(shim, ["status"], {
       env,
     });
 
@@ -648,7 +652,7 @@ describe("installed launcher runtime selection", () => {
       const args =
         _name === "instance management"
           ? ["instances", "use", "preview"]
-          : ["trace", "status"];
+          : ["status"];
 
       const { stdout } = await promisify(execFile)(shim, args, {
         env: {
@@ -849,50 +853,25 @@ describe("Desktop installation alongside npm", () => {
   });
 });
 
-it("Desktop removal preserves hooks and capture owned by an npm installation", async () => {
+it("Desktop install and removal keep hooks that run another live installation", async () => {
   const homeDir = await temporaryHome("review-uninstall-coexist-");
-
-  const env = {
-    DEV_REVIEW_HOME: path.join(homeDir, ".dev"),
-    TRACE_R2_MODE: "mock",
-  };
-
-  const npm = path.join(homeDir, "npm/bin/review");
+  const env = { DEV_REVIEW_HOME: path.join(homeDir, ".dev") };
+  const npm = path.join(homeDir, "npm/bin/whiteboard");
   await mkdir(path.dirname(npm), { recursive: true });
   await writeFile(npm, "#!/bin/sh\n", { mode: 0o755 });
+  const settings = await writeOldClaudeHook(homeDir, npm);
+  const before = await readFile(settings, "utf8");
 
-  const installed = await applyCliInstall({
-    packageRoot,
-    homeDir,
-    env,
-    trace: {
-      endpoint: "mock://endpoint",
-      bucket: "fixture",
-      key: "key",
-      secret: "secret",
-    },
-  });
-
-  expect(installed.code).toBe(0);
-  const hook = await installClaudeTraceHook(homeDir, npm);
-  const before = await readFile(hook.path, "utf8");
   await applyCliInstall({
     packageRoot,
     shim: true,
-    trace: true,
     cliPath: path.join(packageRoot, "dist/cli.js"),
     homeDir,
     env,
   });
-  expect(await readFile(hook.path, "utf8")).toBe(before);
-  await removeCliInstall({
-    shim: true,
-    trace: true,
-    homeDir,
-    env,
-  });
-  expect(await readFile(hook.path, "utf8")).toBe(before);
-  expect((await traceMachineStatus({ homeDir, env })).enabled).toBe(true);
+  expect(await readFile(settings, "utf8")).toBe(before);
+  await removeCliInstall({ shim: true, homeDir, env });
+  expect(await readFile(settings, "utf8")).toBe(before);
 });
 
 const STAMPED_SKILL = `---
@@ -1066,7 +1045,6 @@ describe("MCP self-install", () => {
         fingerprint: "old",
         targets: ["claude"],
         shimPath: shim,
-        traceManaged: true,
         updatedAt: now,
       });
 
@@ -1146,72 +1124,4 @@ describe("MCP self-install", () => {
       ).toBe(true);
     });
   });
-});
-
-it("retargets enabled repository hooks before removing the owned legacy launcher", async () => {
-  const homeDir = await mkdtemp(path.join(tmpdir(), "review-shim-trace-"));
-  temporaryDirectories.push(homeDir);
-  const cwd = path.join(homeDir, "repo");
-  await mkdir(cwd);
-  const run = promisify(execFile);
-  await run("git", ["init", "--quiet", cwd]);
-  const settings = path.join(homeDir, "trace-settings.json");
-  await writeFile(
-    settings,
-    JSON.stringify({
-      version: 1,
-      enabled: true,
-      autoActivateRepositories: true,
-    }),
-  );
-
-  const env = {
-    ...process.env,
-    DEV_REVIEW_HOME: path.join(homeDir, ".dev"),
-    TRACE_SETTINGS_FILE: settings,
-    DEV_FAST_REVIEW_CLI_NO_DELEGATE: "1",
-  };
-
-  const oldCommand = path.join(homeDir, ".local", "bin", "review");
-  await mkdir(path.dirname(oldCommand), { recursive: true });
-  await writeFile(
-    oldCommand,
-    "#!/bin/sh\n# Managed by Whiteboard Desktop\nexit 1\n",
-    { mode: 0o755 },
-  );
-  await enableTraceRepository({
-    cwd,
-    scope: traceScope({ homeDir, env }),
-    reviewCommand: oldCommand,
-  });
-  const cliPath = path.join(homeDir, "cli.js");
-  const invoked = path.join(homeDir, "invoked.json");
-  await writeFile(
-    cliPath,
-    `require("node:fs").writeFileSync(${JSON.stringify(invoked)}, JSON.stringify(process.argv.slice(2)));`,
-  );
-
-  const result = await applyCliInstall({
-    shim: true,
-    homeDir,
-    env,
-    packageRoot,
-    cliPath,
-    cliRuntimePath: process.execPath,
-  });
-
-  expect(result.code).toBe(0);
-  await expect(lstat(oldCommand)).rejects.toMatchObject({ code: "ENOENT" });
-  const hooks = await traceRepositoryStatus(cwd);
-  await run(
-    "sh",
-    [path.join(hooks.managedHooksPath!, "prepare-commit-msg"), "message"],
-    { cwd, env },
-  );
-  expect(JSON.parse(await readFile(invoked, "utf8"))).toEqual([
-    "trace",
-    "git-hook",
-    "prepare-commit-msg",
-    "message",
-  ]);
 });

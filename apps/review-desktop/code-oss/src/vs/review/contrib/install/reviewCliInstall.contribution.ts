@@ -91,7 +91,8 @@ registerAction2(InstallReviewCliInPathAction);
 
 /**
  * Removes everything the app installed on this machine: the whiteboard
- * terminal command, managed trace capture, and the consent stamp. It then
+ * terminal command, hooks earlier builds set up for trace capture, and the
+ * consent stamp. It then
  * points at the app bundle so the user can move it to the Trash. Other Review
  * data stays untouched. Resetting the stamp makes a later reinstall start as
  * a first run.
@@ -117,12 +118,10 @@ class UninstallReviewDesktopAction extends Action2 {
 			status.stamp?.shimPath
 				? localize("review.uninstall.shim", "Removes the whiteboard terminal command at {0}.", status.stamp.shimPath)
 				: localize("review.uninstall.noShim", "The whiteboard terminal command is not installed."),
-			status.stamp?.traceManaged
-				? localize(
-						"review.uninstall.trace",
-						"Disables trace capture and restores hook paths for known repositories. R2 credentials stay on disk.",
-					)
-				: localize("review.uninstall.noTrace", "Trace capture is not managed by Whiteboard."),
+			localize(
+				"review.uninstall.oldHooks",
+				"Removes any agent and Git hooks that earlier versions installed for trace capture.",
+			),
 			localize("review.uninstall.keepsData", "Your sessions and their history stay on disk."),
 		].join("\n");
 		const { confirmed } = await dialogService.confirm({
@@ -135,14 +134,11 @@ class UninstallReviewDesktopAction extends Action2 {
 		}
 
 		try {
-			await desktopConnection.removeCliInstall({
-				shim: true,
-				...(status.stamp?.traceManaged ? { trace: true } : {}),
-			});
+			await desktopConnection.removeCliInstall({ shim: true });
 			await desktopConnection.resetCliInstallPrompts();
 		} catch (error) {
 			await dialogService.error(
-				localize("review.uninstall.failed", "Whiteboard could not remove its command and trace setup."),
+				localize("review.uninstall.failed", "Whiteboard could not remove its command."),
 				String(error),
 			);
 			return;
@@ -167,7 +163,7 @@ class UninstallReviewDesktopAction extends Action2 {
 
 		if (isWindows && environmentService.isBuilt) {
 			await dialogService.info(
-				localize("review.uninstall.done", "Whiteboard's command and trace setup were removed."),
+				localize("review.uninstall.done", "Whiteboard's command was removed."),
 				localize(
 					"review.uninstall.windowsFinish",
 					"To remove the app, quit Whiteboard and uninstall {0} from Settings > Apps > Installed apps. Your sessions and settings stay on disk.",
@@ -180,7 +176,7 @@ class UninstallReviewDesktopAction extends Action2 {
 		const bundlePath = macAppBundlePath(environmentService.appRoot);
 		if (bundlePath) {
 			const { confirmed: reveal } = await dialogService.confirm({
-				message: localize("review.uninstall.done", "Whiteboard's command and trace setup were removed."),
+				message: localize("review.uninstall.done", "Whiteboard's command was removed."),
 				detail: localize(
 					"review.uninstall.finish",
 					"To finish, quit Whiteboard Desktop and move {0} to the Trash.",
@@ -194,7 +190,7 @@ class UninstallReviewDesktopAction extends Action2 {
 			}
 		} else {
 			await dialogService.info(
-				localize("review.uninstall.done", "Whiteboard's command and trace setup were removed."),
+				localize("review.uninstall.done", "Whiteboard's command was removed."),
 				localize("review.uninstall.finishDev", "This is a development build, so there is no app bundle to remove."),
 			);
 		}

@@ -45,7 +45,7 @@ export async function runShareCli(input: {
           : z.number().int().nonnegative().parse(Number(input.version));
 
       input.stderr.write(
-        "Sharing uploads the whiteboard with its maps, full trace conversations, and the code lines it references. Anyone with the link can read them; no repository access is needed. Opening it in Whiteboard Desktop also fetches the pinned commits from the repository's remote.\n",
+        "Sharing uploads the whiteboard with its maps and the code lines it references. Anyone with the link can read them; no repository access is needed. Opening it in Whiteboard Desktop also fetches the pinned commits from the repository's remote.\n",
       );
 
       const result = resultSchema.parse(

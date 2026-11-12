@@ -59,11 +59,6 @@ import type { SourcePeekAnchor } from "./review-panel-model";
 import { useReviewRoots } from "./review-root-context";
 import type { SoftwareMapResolvedDataPayload } from "./software-map/software-map-snapshot";
 
-export interface BoardTrace {
-  label: string;
-  events: { id: string; role: string; text: string }[];
-}
-
 export interface ApiDocumentData {
   snapshot: Snapshot;
   headings: ApiHeadingIds;
@@ -71,7 +66,6 @@ export interface ApiDocumentData {
   commits?: ReviewCommitSummary[];
   anchors: Map<string, SourcePeekAnchor>;
   images: Map<string, string>;
-  traces: Map<string, BoardTrace>;
   /** Board link targets, keyed "<boardId>#<blockId>". */
   boards: Map<string, BoardLinkTarget>;
   maps: Map<
@@ -176,7 +170,6 @@ export function createDocumentLoader(
     commits: `${reviewId}:commits:${JSON.stringify(pins)}`,
     links: `${reviewId}:links:${version}`,
     image: (assetId: string) => `${reviewId}:image:${assetId}`,
-    trace: (traceId: string) => `${reviewId}:trace:${traceId}`,
     map: (mapVersionId: string) =>
       `${reviewId}:map:${mapVersionId}:${JSON.stringify(pins ?? null)}`,
   });
@@ -201,7 +194,6 @@ export function createDocumentLoader(
         : [],
       anchors: new Map(),
       images: new Map(),
-      traces: new Map(),
       boards,
       maps: new Map(),
     };
@@ -223,12 +215,6 @@ export function createDocumentLoader(
         const blob = cached<Blob>(key.image(node.assetId));
 
         if (blob) data.images.set(node.assetId, url(blob));
-      }
-
-      if (node.type === "trace_quote") {
-        const trace = cached<BoardTrace | null>(key.trace(node.traceId));
-
-        if (trace) data.traces.set(node.traceId, trace);
       }
 
       if (node.type === "software_map" && !data.maps.has(node.mapVersionId)) {
@@ -285,18 +271,6 @@ export function createDocumentLoader(
                 `/${encodeURIComponent(snapshot.reviewId)}/resources/${encodeURIComponent(node.assetId)}`,
               )
             ).blob(),
-          ),
-        );
-
-      // A trace that cannot be loaded leaves its quote to render as text.
-      if (node.type === "trace_quote")
-        pending.push(
-          read(key.trace(node.traceId), () =>
-            client
-              .read<BoardTrace>(
-                `/${encodeURIComponent(snapshot.reviewId)}/resources/${encodeURIComponent(node.traceId)}`,
-              )
-              .catch(() => null),
           ),
         );
 
@@ -598,7 +572,7 @@ export const DocumentNode = memo(function DocumentNode({
       repositoryId: boardRepositoryId(data.snapshot),
     }).some((reference) => data.snapshot.staleSources?.includes(reference.id));
 
-  const prose = node.type === "markdown" || node.type === "trace_quote";
+  const prose = node.type === "markdown";
 
   // Document and drawing styles find a block's own elements by its
   // data-review-node-id, and its prose by proseMarker.

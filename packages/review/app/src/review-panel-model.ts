@@ -6,14 +6,7 @@ export type ReviewPeekContent =
   /** `more` follows `source` for a step with several ranges. */
   | { kind: "source"; source: DiffSelection; more?: DiffSelection[] }
   | { kind: "inline-code"; language?: string; text: string }
-  | { kind: "explanation"; text?: string }
-  | {
-      kind: "trace-quote";
-      sessionId: string;
-      trace?: string;
-      event?: number;
-      quote: string;
-    };
+  | { kind: "explanation"; text?: string };
 
 /** The subject of a peek or tour stop. */
 export interface PeekAnchor {

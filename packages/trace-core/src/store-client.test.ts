@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { JsonValue } from "@dev.fast/json";
-import { storeRoutes } from "@dev.fast/trace-protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -42,9 +41,6 @@ describe("StoreClient", () => {
     await expect(client.deviceToken("code")).rejects.toBeInstanceOf(
       HostedStoreDisabledError,
     );
-    await expect(
-      client.createStore({ owner: "a", name: "b" }),
-    ).rejects.toBeInstanceOf(HostedStoreDisabledError);
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -94,35 +90,16 @@ describe("StoreClient", () => {
       fetch,
     });
 
-    await expect(
-      client.createStore({ owner: "a", name: "b" }),
-    ).rejects.toMatchObject({ code: "forbidden", status: 403 });
+    await expect(client.session()).rejects.toMatchObject({
+      code: "forbidden",
+      status: 403,
+    });
     expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({
       authorization: "Bearer tok",
     });
     expect(fetch.mock.calls[0]?.[0]).toBe(
-      new URL(storeRoutes.stores(), "https://app.dev.fast").toString(),
+      new URL("/api/auth/get-session", "https://app.dev.fast").toString(),
     );
-  });
-
-  it("returns null for a 404 from findStore", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>(
-      async () =>
-        new Response(
-          JSON.stringify({ error: { code: "not_found", message: "no" } }),
-          { status: 404, headers: { "content-type": "application/json" } },
-        ),
-    );
-
-    const client = new StoreClient({
-      origin: "https://app.dev.fast",
-      token: "tok",
-      fetch,
-    });
-
-    await expect(
-      client.findStore({ owner: "a", name: "b" }),
-    ).resolves.toBeNull();
   });
 
   it("maps device polling errors to pending states", async () => {
@@ -179,99 +156,10 @@ describe("StoreClient", () => {
       fetch,
     });
 
-    await expect(
-      client.createStore({ owner: "a", name: "b" }),
-    ).rejects.toMatchObject({
+    await expect(client.session()).rejects.toMatchObject({
       code: "upgrade_required",
       status: 200,
       message: STORE_UPGRADE_REQUIRED_MESSAGE,
     });
-  });
-
-  it("rejects a 0.1 store that begins an upload without an uploadId", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
-      jsonResponse({
-        storeId: "a".repeat(32),
-        baseGeneration: 0,
-        uploads: [],
-      }),
-    );
-
-    const client = new StoreClient({
-      origin: "https://app.dev.fast",
-      token: "tok",
-      fetch,
-    });
-
-    await expect(
-      client.beginUpload(7, "session-1", { harness: "claude", objects: [] }),
-    ).rejects.toMatchObject({ code: "upgrade_required" });
-  });
-
-  it("completes an upload by its id and returns the receipt", async () => {
-    const receipt = {
-      sessionId: "session-1",
-      uploadId: "b".repeat(32),
-      generation: 2,
-      objects: [{ name: "main.jsonl.gz", size: 10, sha256: "0".repeat(64) }],
-      commits: ["c".repeat(40)],
-    };
-
-    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
-      jsonResponse(receipt),
-    );
-
-    const client = new StoreClient({
-      origin: "https://app.dev.fast",
-      token: "tok",
-      fetch,
-    });
-
-    await expect(
-      client.completeUpload(7, "session-1", "b".repeat(32), {
-        commits: ["c".repeat(40)],
-      }),
-    ).resolves.toEqual(receipt);
-
-    expect(fetch.mock.calls[0]?.[0]).toBe(
-      new URL(
-        storeRoutes.uploadComplete(7, "session-1", "b".repeat(32)),
-        "https://app.dev.fast",
-      ).toString(),
-    );
-    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
-      method: "POST",
-      body: JSON.stringify({ commits: ["c".repeat(40)] }),
-    });
-  });
-
-  it("deletes a store and accepts the 202 receipt", async () => {
-    const receipt = {
-      repositoryId: 7,
-      storeId: "a".repeat(32),
-      status: "deleting",
-      deletedAt: "2026-09-05T00:00:00.000Z",
-    };
-
-    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
-      jsonResponse(receipt, 202),
-    );
-
-    const client = new StoreClient({
-      origin: "https://app.dev.fast",
-      token: "tok",
-      fetch,
-    });
-
-    await expect(client.deleteStore(7)).resolves.toEqual(receipt);
-
-    expect(fetch.mock.calls[0]?.[0]).toBe(
-      new URL(storeRoutes.store(7), "https://app.dev.fast").toString(),
-    );
-    expect(fetch.mock.calls[0]?.[1]).toMatchObject({
-      method: "DELETE",
-      headers: { authorization: "Bearer tok" },
-    });
-    expect(fetch.mock.calls[0]?.[1]?.body).toBeUndefined();
   });
 });

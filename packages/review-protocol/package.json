@@ -22,7 +22,6 @@
   "dependencies": {
     "@dev.fast/diffr": "workspace:*",
     "@dev.fast/json": "workspace:*",
-    "@dev.fast/trace-protocol": "workspace:*",
     "zod": "catalog:"
   },
   "devDependencies": {

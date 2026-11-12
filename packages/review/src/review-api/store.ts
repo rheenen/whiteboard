@@ -27,6 +27,7 @@ import {
   ReviewInputError,
   type ReviewTarget,
   type SourcePins,
+  TRACE_QUOTES_UNSUPPORTED,
   type WrittenComponent,
   adoptFlowUnits,
   anchorPins,
@@ -56,6 +57,7 @@ import {
   sourceAnchors,
   sourceReferences,
   summarizeEdit,
+  traceQuoteReferences,
   updateCoverage,
 } from "@dev.fast/whiteboard-document";
 import type { GitHubPullRequest } from "@review/github-pr-graph.js";
@@ -2392,10 +2394,12 @@ export class ReviewStore {
     // Check cross-references here; do not reparse the whole stored document.
     checkReferences(snapshot.document);
 
-    // A restore may bring back links to deleted boards, and a copy links to
-    // boards on another machine, so skip the check.
-    if (!options.restore && !options.copied)
+    // A restore may bring back links to deleted boards and old trace quotes,
+    // and a copy links to boards on another machine, so skip the checks.
+    if (!options.restore && !options.copied) {
       this.checkBoardLinks(snapshot, previous, options.person);
+      rejectNewTraceQuotes(snapshot.document, previous?.document ?? []);
+    }
 
     if (
       snapshot.pins &&
@@ -3769,6 +3773,23 @@ export class ReviewStore {
 
     return warnings.sort();
   }
+}
+
+/** Stored boards keep their trace quotes, but a write cannot add one: trace
+ * support is gone. */
+function rejectNewTraceQuotes(document: Block[], previous: Block[]): void {
+  const kept = new Set(traceQuoteReferences(previous).map(quoteKey));
+
+  if (
+    traceQuoteReferences(document).some((quote) => !kept.has(quoteKey(quote)))
+  )
+    throw new ReviewInputError(TRACE_QUOTES_UNSUPPORTED);
+}
+
+function quoteKey(block: Block): string {
+  return block.type === "trace_quote"
+    ? JSON.stringify([block.traceId, block.eventId, block.text])
+    : "";
 }
 
 /** The highest number in a document's `prefix-N` ids, units included. */

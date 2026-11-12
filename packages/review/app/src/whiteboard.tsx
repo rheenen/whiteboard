@@ -25,7 +25,6 @@ import {
 
 import { AgentSelectionProvider } from "./agent-selection";
 import { ApiDocument, type ApiDocumentData } from "./api-document";
-import { retainedTrace } from "./api-trace";
 import { App, type RenderedReviewDocument } from "./App";
 import { AskDesktopSync } from "./ask-dock";
 import { AskHistoryProvider } from "./ask-history";
@@ -59,7 +58,7 @@ import { reportReviewDocumentRenderError } from "./review-document-error-report"
 import type { ReviewTocEntry } from "./review-document-headings";
 import { type ReviewFindHost, ReviewFindProvider } from "./review-find";
 import { ReviewLensesProvider } from "./review-lenses";
-import { ReviewPanelProvider, useReviewPanelStore } from "./review-panel";
+import { ReviewPanelProvider } from "./review-panel";
 import {
   CanvasRootContainer,
   ReviewRootsProvider,
@@ -149,7 +148,7 @@ export function WhiteboardProvider({
   const softwareMapEnabled = settings.softwareMapEnabled === true;
   const mapsShown = softwareMapEnabled && data.maps.size > 0;
   const title = boardTitle(snapshot.title);
-  const { headings, commits, anchors, images, traces, boards, maps } = data;
+  const { headings, commits, anchors, images, boards, maps } = data;
 
   const document = useMemo<ApiDocumentData>(
     () => ({
@@ -158,11 +157,10 @@ export function WhiteboardProvider({
       commits,
       anchors,
       images,
-      traces,
       boards,
       maps,
     }),
-    [snapshot, headings, commits, anchors, images, traces, boards, maps],
+    [snapshot, headings, commits, anchors, images, boards, maps],
   );
 
   return (
@@ -280,7 +278,7 @@ function useBoardSession(
   }, [host, reviewId]);
 
   // Not all of `data`: coverage and the editor's headings change often.
-  const { snapshot, version, hostState, available, traces, place } = data;
+  const { snapshot, version, hostState, available, place } = data;
   const remoteHost = data.host;
 
   return useMemo(() => {
@@ -312,9 +310,6 @@ function useBoardSession(
             : undefined,
         pullRequestNumber: snapshot.origin?.pullRequestNumber,
         pullRequestUrl: snapshot.origin?.pullRequestUrl,
-        traces: new Map(
-          [...traces].map(([id, trace]) => [id, retainedTrace(id, trace)]),
-        ),
         knownPlace: place,
         place: async (signal?: AbortSignal) =>
           parseReviewBoardPlace(
@@ -375,7 +370,6 @@ function useBoardSession(
     remoteHost,
     hostState,
     available,
-    traces,
     place,
     host.remoteHosts,
     reviewId,
@@ -390,14 +384,8 @@ function BoardReview({
   softwareMapEnabled: boolean;
   children: ReactNode;
 }) {
-  const panelStore = useReviewPanelStore();
-
   return (
-    <ReviewProvider
-      documentRoute="/"
-      softwareMapEnabled={softwareMapEnabled}
-      openTraceSession={panelStore.getState().openTrace}
-    >
+    <ReviewProvider documentRoute="/" softwareMapEnabled={softwareMapEnabled}>
       {children}
     </ReviewProvider>
   );

@@ -41,7 +41,6 @@ test("install status shares concurrent scans and refreshes on subsequent checks"
 		return Response.json({
 			fingerprint: "test", stamp: null, stale: requests > 1, updateNeeded: false,
 			shim: { path: "/tmp/review", installed: false, profileConfigured: false, onPath: false },
-			trace: { enabled: false, configured: false, autoActivateRepositories: false, envPath: "/tmp/env", settingsPath: "/tmp/settings" },
 			cli: null,
 			connect: { command: "review", args: ["mcp"], prompts: { claude: "c", codex: "c", cursor: "c", opencode: "c", pi: "c", omp: "c", copilot: "c" }, plugins: { claude: { label: "c" }, codex: { label: "c" }, cursor: { label: "c" }, opencode: { label: "c" }, pi: { label: "c" }, omp: { label: "c" }, copilot: { label: "c" } } },
 			legacySkills: [],

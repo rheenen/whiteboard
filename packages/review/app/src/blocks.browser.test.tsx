@@ -6,12 +6,7 @@ import {
   isUnit,
   selectionKey,
 } from "@dev.fast/whiteboard-document";
-import {
-  FIXTURE_IMAGE_ID,
-  FIXTURE_MAP_ID,
-  FIXTURE_TRACE_EVENT_ID,
-  FIXTURE_TRACE_ID,
-} from "@review/fixtures/blocks/ids";
+import { FIXTURE_IMAGE_ID, FIXTURE_MAP_ID } from "@review/fixtures/blocks/ids";
 import type { ReviewProgress } from "@review/review-api/review-progress";
 import type { Snapshot } from "@review/review-api/store";
 import { defineSoftwareMap } from "@review/software-map-model";
@@ -55,17 +50,6 @@ const fixtures = new Map(
     documentSchema.parse(module.default),
   ]),
 );
-
-const trace = {
-  label: "Fixture conversation",
-  events: [
-    {
-      id: FIXTURE_TRACE_EVENT_ID,
-      role: "assistant",
-      text: "Please queue the order once the row is written.",
-    },
-  ],
-};
 
 // A 1x1 PNG.
 const png = Uint8Array.from(
@@ -154,8 +138,10 @@ const rendered: Record<
     text(c).includes("write queued"),
   image: (c) =>
     has(c, "figure img[src^='blob:']") && text(c).includes("An image"),
+  // Retired: a stored quote shows a placeholder, never its trace.
   trace_quote: (c) =>
-    has(c, 'a[href^="#trace-"]') && text(c).includes("queue the order"),
+    has(c, "p[data-unavailable='trace']") &&
+    text(c).includes("Trace quotes are not supported"),
   // The map has drawn its system and is neither refreshing nor failed.
   flow_diagram: (c) =>
     has(c, ".lens-flow-node") &&
@@ -195,7 +181,6 @@ afterEach(async () => {
 async function mountFixture(
   kind: Kind,
   options: {
-    trace?: null;
     diagramFullscreenOnClick?: boolean;
     document?: Snapshot["document"];
     host?: Partial<WhiteboardHost>;
@@ -236,7 +221,6 @@ async function mountFixture(
         },
       ],
       images: { [FIXTURE_IMAGE_ID]: image },
-      traces: options.trace === null ? {} : { [FIXTURE_TRACE_ID]: trace },
       maps: { [FIXTURE_MAP_ID]: savedMap },
     });
 
@@ -2035,18 +2019,6 @@ describe("block components", () => {
         container.querySelector('.fixture-inline-editor[data-path="order.ts"]'),
       ),
     ).not.toBeNull();
-  });
-
-  it("renders a trace quote whose trace fails to load as a placeholder, not an error", async () => {
-    const { container } = await mountFixture("trace_quote", { trace: null });
-
-    expect(
-      await settled(() =>
-        container.querySelector("blockquote[data-unavailable='trace']"),
-      ),
-    ).toBeTruthy();
-    expect(text(container)).toContain("queue the order");
-    expect(container.querySelector("[data-block-error]")).toBeNull();
   });
 });
 

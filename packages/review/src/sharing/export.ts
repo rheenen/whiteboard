@@ -123,7 +123,7 @@ export function shareRequestBody(bundle: ShareBundle, requestId: string) {
 
   if (Buffer.byteLength(body) > MAX_SHARE_BYTES)
     throw new ReviewInputError(
-      `Review exceeds the ${MAX_SHARE_BYTES / 1024 / 1024} MB sharing limit. Remove large traces, then retry.`,
+      `Review exceeds the ${MAX_SHARE_BYTES / 1024 / 1024} MB sharing limit. Remove large images or maps, then retry.`,
     );
 
   return body;
@@ -206,22 +206,15 @@ export async function exportShare(input: {
     ),
   ];
 
-  const traces = new Map<string, unknown>();
   const maps = new Map<string, Awaited<ReturnType<LocalReviewData["map"]>>>();
 
   for (const block of resourceReferences(snapshot.document)) {
     await input.data.validateResource(pins, block);
     const id = resourceReference(block)?.id;
 
-    if (!id || block.type === "image" || traces.has(id) || maps.has(id))
-      continue;
+    if (!id || block.type === "image" || maps.has(id)) continue;
 
-    if (block.type === "trace_quote")
-      traces.set(
-        id,
-        JSON.parse(Buffer.from(input.store.resource(id).data).toString()),
-      );
-    else if (block.type === "software_map") {
+    if (block.type === "software_map") {
       const map = await input.data.map(pins, id);
       maps.set(id, map);
 
@@ -315,7 +308,8 @@ export async function exportShare(input: {
     title: snapshot.title,
     snapshot,
     images: {},
-    traces: Object.fromEntries(traces),
+    // Readers before trace capture was retired require the field.
+    traces: {},
     maps: Object.fromEntries(maps),
     commits: pins
       ? await input.data.commits((await input.data.resolveSource(stored)).pins)

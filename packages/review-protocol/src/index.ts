@@ -16,10 +16,6 @@ export {
 } from "./code-peek-diff.js";
 
 import {
-  type ReviewAgentTraceListResponse,
-  ReviewAgentTraceListResponseSchema,
-  type ReviewAgentTraceResponse,
-  ReviewAgentTraceResponseSchema,
   type ReviewCliInstallApplyRequest,
   ReviewCliInstallApplyRequestSchema,
   type ReviewCliInstallApplyResponse,
@@ -59,19 +55,6 @@ export * from "./review-api-client.js";
 export * from "./review-host-status.js";
 
 export * from "./board-icons.js";
-
-export {
-  type ByCommitEntry,
-  type ReviewAgentTraceEvent,
-  ReviewAgentTraceEventSchema,
-  type ReviewAgentTraceSession,
-  ReviewAgentTraceSessionSchema,
-  type SessionMeta,
-  byCommitSchema,
-  commitShaSchema,
-  sessionIdSchema,
-  sessionMetaSchema,
-} from "@dev.fast/trace-protocol";
 
 export function parseReviewDesktopDiscovery(
   value: JsonValue,
@@ -143,18 +126,6 @@ export function parseReviewVerbRequest(value: JsonValue): ReviewVerbRequest {
 
 export function parseReviewVerbResponse(value: JsonValue): ReviewVerbResponse {
   return parseZod(ReviewVerbResponseSchema, value);
-}
-
-export function parseReviewAgentTraceListResponse(
-  value: JsonValue,
-): ReviewAgentTraceListResponse {
-  return parseZod(ReviewAgentTraceListResponseSchema, value);
-}
-
-export function parseReviewAgentTraceResponse(
-  value: JsonValue,
-): ReviewAgentTraceResponse {
-  return parseZod(ReviewAgentTraceResponseSchema, value);
 }
 
 export function parseZod<T>(

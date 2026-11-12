@@ -79,7 +79,6 @@ import {
 } from "./review-stack-selector";
 import { offeredReviewViews } from "./review-view-route";
 import { useReviewViewStateSync } from "./review-view-state";
-import { ReviewTraceView } from "./ReviewTraceView";
 import { elevation, fontSize, fontWeight, radius, space } from "./scale.stylex";
 import { shellStyles } from "./shell-styles";
 import { useRightPanelResize } from "./side-panel-resizer";
@@ -93,11 +92,9 @@ import { SoftwareMap } from "./software-map/SoftwareMap";
 import { withClass } from "./stylex-props";
 import { themeClass, themeStyles } from "./theme-styles";
 import { tokens } from "./tokens.stylex";
-import { traceStyles } from "./trace-styles";
 import { captureUiEvent } from "./ui-telemetry";
 import { SegmentedControl, labeledOptions } from "./ui/segmented";
 import { useReviewTabTelemetry } from "./use-review-tab-telemetry";
-import { useTraceList } from "./use-trace-list";
 
 const DEFAULT_SIDE_PEEK_WIDTH = 560;
 
@@ -246,8 +243,6 @@ function ReviewLayoutContent({
       ? { right: "auto", width: `${frozenDiffWidth}px` }
       : undefined;
 
-  const traceSelection = useReviewPanel((state) => state.traceSelection);
-  const traceStorage = useReviewPanel((state) => state.traceStorage);
   const mapFocus = useReviewPanel((state) => state.mapFocus);
 
   const debugSettings = useReviewDebugSettings();
@@ -336,7 +331,6 @@ function ReviewLayoutContent({
     );
   }, [activeView, reviewFind]);
 
-  const storedList = useTraceList();
   const diffFiles = useReviewDiffFiles();
 
   const activeLens = useReviewLenses()?.active;
@@ -359,13 +353,6 @@ function ReviewLayoutContent({
 
   useDiffFilePicker(diffFilePicker);
 
-  // A host without requests has only the board's own traces.
-  const hasTraceSessions =
-    !session.review?.host &&
-    ((session.review?.traces.size ?? 0) > 0 ||
-      (session.bridge.request !== undefined &&
-        (storedList.status !== "loaded" || storedList.sessions.length > 0)));
-
   const hasDiff =
     hasChangeRange &&
     !(diffFiles.status === "loaded" && diffFiles.files.length === 0);
@@ -381,9 +368,8 @@ function ReviewLayoutContent({
       offeredReviewViews({
         hasDiff,
         softwareMapEnabled,
-        hasTraceSessions,
       }),
-    [hasDiff, hasTraceSessions, softwareMapEnabled],
+    [hasDiff, softwareMapEnabled],
   );
 
   useLayoutEffect(() => {
@@ -633,7 +619,6 @@ function ReviewLayoutContent({
             activeView === "review" &&
               tocEntries.length > 0 &&
               shellStyles.reviewRegionRail,
-            activeView === "trace" && traceStyles.region,
           )}
         >
           <div
@@ -755,15 +740,6 @@ function ReviewLayoutContent({
               </DocumentContentsContext.Provider>
             )}
           </div>
-          {activeView === "trace" && (
-            <ReviewTraceView
-              selection={traceSelection}
-              onSelect={panelStore.getState().selectTrace}
-              storage={traceStorage}
-              onSelectStorage={panelStore.getState().selectTraceStorage}
-              storedList={storedList}
-            />
-          )}
         </section>
         {activeView === "review" && (
           <OverlayScrollbar scroller={scrollRegion} />

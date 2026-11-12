@@ -13,10 +13,6 @@ import path from "node:path";
 import { PassThrough, Readable } from "node:stream";
 
 import { REVIEW_REMOTE_WRAPPER_MARK } from "@dev.fast/review-protocol";
-import {
-  StoreClient,
-  runTraceSessions as runTraceSessionsActual,
-} from "@dev.fast/trace-core";
 import { describe, expect, it, vi } from "vitest";
 
 import { runReviewCli } from "./cli-runner";
@@ -36,7 +32,6 @@ import {
   type ReviewCommandTelemetry,
   ReviewTelemetry,
 } from "./review-telemetry";
-import { runTraceStatus as runTraceStatusActual } from "./trace-cli";
 
 describe("Whiteboard CLI", () => {
   it("routes Cursor install instructions without connecting to Desktop", async () => {
@@ -202,34 +197,23 @@ describe("Whiteboard CLI", () => {
     );
   });
 
-  it("routes own-upload status filters without requesting trace content", async () => {
-    const runTraceStatus = vi.fn<typeof runTraceStatusActual>(async () => 0);
+  it.each([
+    ["trace", "hook", "SessionStart"],
+    ["trace", "hook", "Stop", "--unknown"],
+    ["trace", "git-hook", "pre-push", "origin", "git@example.com:a/b.git"],
+  ])(
+    "lets hooks from builds with trace capture succeed silently: %j",
+    async (...argv) => {
+      let output = "";
+      const stdout = outputStream();
+      const stderr = outputStream();
+      stdout.on("data", (chunk) => (output += String(chunk)));
+      stderr.on("data", (chunk) => (output += String(chunk)));
 
-    const code = await runReviewCli({
-      argv: [
-        "trace",
-        "status",
-        "--agent-session",
-        "my-upload-session",
-        "--limit",
-        "5",
-        "--cursor",
-        "cursor-value",
-      ],
-      stdout: outputStream(),
-      stderr: outputStream(),
-      runtime: { runTraceStatus },
-    });
-
-    expect(code).toBe(0);
-    expect(runTraceStatus).toHaveBeenCalledWith(
-      expect.objectContaining({
-        session: "my-upload-session",
-        limit: 5,
-        cursor: "cursor-value",
-      }),
-    );
-  });
+      await expect(runReviewCli({ argv, stdout, stderr })).resolves.toBe(0);
+      expect(output).toBe("");
+    },
+  );
 
   it("prints the package version", async () => {
     const stdout = outputStream();
@@ -792,37 +776,6 @@ describe("Whiteboard CLI", () => {
     ).resolves.toBe(1);
   });
 
-  it("rejects a --limit that is not a whole number before the runtime runs", async () => {
-    const runTraceSessions = vi.fn<typeof runTraceSessionsActual>(
-      async () => 0,
-    );
-
-    for (const value of ["50junk", "1.5", "-1", ""]) {
-      const stderr = outputStream();
-      await expect(
-        runReviewCli({
-          argv: ["trace", "sessions", "--limit", value],
-          stdout: outputStream(),
-          stderr,
-          runtime: { runTraceSessions },
-        }),
-      ).resolves.toBe(1);
-      expect(runTraceSessions).not.toHaveBeenCalled();
-    }
-
-    await expect(
-      runReviewCli({
-        argv: ["trace", "sessions", "--limit", "50"],
-        stdout: outputStream(),
-        stderr: outputStream(),
-        runtime: { runTraceSessions },
-      }),
-    ).resolves.toBe(0);
-    expect(runTraceSessions).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 50 }),
-    );
-  });
-
   it.each([
     ["migrate", "apply"],
     ["migrate", "apply", "--force"],
@@ -940,7 +893,6 @@ async function runConnect(
       cwd: homeDir,
       env: {
         HOME: homeDir,
-        TRACE_HOME_DIR: homeDir,
         DEV_REVIEW_HOME: path.join(homeDir, ".dev"),
         ...extra?.env?.(homeDir),
       },
@@ -955,56 +907,3 @@ async function runConnect(
     await rm(homeDir, { recursive: true, force: true });
   }
 }
-
-it("emits one JSON error when a trace command needs repository authorization", async () => {
-  const stdout = outputStream();
-  let output = "";
-  stdout.on("data", (chunk) => {
-    output += chunk.toString();
-  });
-
-  const client = new StoreClient({
-    origin: "https://app.dev.fast",
-    token: "identity",
-    fetch: async () =>
-      Response.json(
-        {
-          error: {
-            code: "repository_authorization_required",
-            message: "Run whiteboard login --traces.",
-          },
-        },
-        { status: 403 },
-      ),
-  });
-
-  const code = await runReviewCli({
-    argv: ["--json", "trace", "status"],
-    stdout,
-    stderr: outputStream(),
-    runtime: {
-      runTraceStatus: async () => {
-        await client.findStore({ owner: "fixture", name: "repo" });
-
-        return 0;
-      },
-    },
-  });
-
-  expect(code).toBe(1);
-
-  const events = output
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
-
-  expect(events).toHaveLength(1);
-  expect(events[0]).toMatchObject({
-    event: "error",
-    error: {
-      message: "Run whiteboard login --traces.",
-      code: "repository_authorization_required",
-      remedy: "whiteboard login --traces",
-    },
-  });
-});

@@ -122,7 +122,7 @@ async function mountBoard(blocks: Snapshot["document"], fullscreen: boolean) {
   await act(async () => {
     const canvas = mountWhiteboard(
       container,
-      loadFixture({ snapshot, commits: [], images: {}, traces: {}, maps: {} }),
+      loadFixture({ snapshot, commits: [], images: {}, maps: {} }),
       { host, settings: { diagramFullscreenOnClick: fullscreen } },
     );
 

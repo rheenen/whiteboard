@@ -81,72 +81,57 @@ describe("store-auth", () => {
     expect(errors).toContain("https");
   });
 
-  it.each([false, true])(
-    "completes device login even with an expired saved token: %s",
-    async (expired) => {
-      vi.stubEnv("DEV_REVIEW_HOME", tmp);
-      const stdout = outputStream();
-      const stderr = outputStream();
+  it("completes a device login and saves it", async () => {
+    vi.stubEnv("DEV_REVIEW_HOME", tmp);
+    const stdout = outputStream();
+    const stderr = outputStream();
 
-      if (expired)
-        await writeStoreAuth({
-          origin: "https://app.dev.fast",
-          token: "expired",
-          login: "old",
-          savedAt: "2026-09-02T00:00:00Z",
-        });
-
-      const responses = [
-        ...(expired
-          ? [json({ error: { code: "unauthorized", message: "expired" } }, 401)]
-          : []),
-        json({
-          device_code: "dc",
-          user_code: "ABCD-1234",
-          verification_uri_complete:
-            "https://app.dev.fast/device?user_code=ABCD-1234",
-          expires_in: 900,
-          interval: 1,
-        }),
-        json({ error: "authorization_pending" }, 400),
-        json({ access_token: "tok", token_type: "Bearer" }),
-        json({
-          user: {
-            id: "user-1",
-            name: "dev",
-            email: "dev@example.com",
-            githubLogin: null,
-          },
-        }),
-      ];
-
-      const fetch = vi.fn<typeof globalThis.fetch>(
-        async () => responses.shift()!,
-      );
-
-      const opened: string[] = [];
-      const codes: string[] = [];
-
-      const code = await runStoreLogin({
-        traces: true,
-        stdout,
-        stderr,
-        fetch,
-        openUrl: async (u) => {
-          opened.push(u);
+    const responses = [
+      json({
+        device_code: "dc",
+        user_code: "ABCD-1234",
+        verification_uri_complete:
+          "https://app.dev.fast/device?user_code=ABCD-1234",
+        expires_in: 900,
+        interval: 1,
+      }),
+      json({ error: "authorization_pending" }, 400),
+      json({ access_token: "tok", token_type: "Bearer" }),
+      json({
+        user: {
+          id: "user-1",
+          name: "dev",
+          email: "dev@example.com",
+          githubLogin: null,
         },
-        onDeviceCode: ({ userCode }) => codes.push(userCode),
-        sleep: async () => {},
-      });
+      }),
+    ];
 
-      expect(code).toBe(0);
-      expect(opened[0]).toContain("user_code=ABCD-1234");
-      expect(codes).toEqual(["ABCD-1234"]);
-      expect(await readStoreAuth()).toMatchObject({
-        token: "tok",
-        login: "dev",
-        email: "dev@example.com",
-      });
-    },
-  );
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () => responses.shift()!,
+    );
+
+    const opened: string[] = [];
+    const codes: string[] = [];
+
+    const code = await runStoreLogin({
+      stdout,
+      stderr,
+      fetch,
+      openUrl: async (u) => {
+        opened.push(u);
+      },
+      onDeviceCode: ({ userCode }) => codes.push(userCode),
+      sleep: async () => {},
+    });
+
+    expect(code).toBe(0);
+    expect(opened[0]).toContain("user_code=ABCD-1234");
+    expect(codes).toEqual(["ABCD-1234"]);
+    expect(await readStoreAuth()).toMatchObject({
+      token: "tok",
+      login: "dev",
+      email: "dev@example.com",
+    });
+  });
 });

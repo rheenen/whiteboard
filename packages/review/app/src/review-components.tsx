@@ -19,7 +19,6 @@ import {
 } from "@canvas/ui/overlay-scrollbar";
 import { textStyles } from "@canvas/ui/text";
 import { useTooltip } from "@canvas/ui/tooltip";
-import { extractTraceEventText } from "@dev.fast/trace-protocol";
 import * as stylex from "@stylexjs/stylex";
 import type {
   CSSProperties,
@@ -105,10 +104,7 @@ import { useBottomSheetResize } from "./side-panel-resizer";
 import { panelStyles, tourStyles } from "./side-panel-styles";
 import { withClass } from "./stylex-props";
 import { tokens } from "./tokens.stylex";
-import { TraceDocument } from "./trace-document";
-import { traceStyles } from "./trace-styles";
 import { captureUiEvent } from "./ui-telemetry";
-import { useAgentTrace } from "./use-agent-trace";
 
 const TOUR_ACTIVE_TOP_SLACK_PX = 18;
 
@@ -404,7 +400,7 @@ interface ProsePeekAnchorProps {
 }
 
 /**
- * Shared prose side-peek anchor primitive for AnchorLink and TraceQuote.
+ * Shared prose side-peek anchor primitive for AnchorLink.
  * Renders an inline anchor with open-state styling, telemetry, and visibility retention.
  */
 export function ProsePeekAnchor({
@@ -738,164 +734,6 @@ function OpenAsk({ askKey }: { askKey: number }) {
   );
 }
 
-function TraceQuotePeekPanel({
-  sessionId,
-  trace,
-  event,
-  quote,
-  onClose,
-}: {
-  sessionId: string;
-  trace?: string;
-  event?: number;
-  quote: string;
-  onClose: () => void;
-}) {
-  const { openTraceSession } = useReviewActions();
-  const data = useAgentTrace(sessionId, trace);
-
-  const traceEvents = data.status === "loaded" ? data.trace.events : undefined;
-
-  const targetEventIndex = useMemo(() => {
-    if (!traceEvents) return -1;
-
-    if (event !== undefined && event >= 0 && event < traceEvents.length) {
-      const e = traceEvents[event];
-      const text = extractTraceEventText(e);
-
-      if (findWhitespaceNormalizedSpan(text, quote)) {
-        return event;
-      }
-    }
-
-    for (let i = 0; i < traceEvents.length; i++) {
-      const text = extractTraceEventText(traceEvents[i]);
-
-      if (findWhitespaceNormalizedSpan(text, quote)) {
-        return i;
-      }
-    }
-
-    return -1;
-  }, [traceEvents, event, quote]);
-
-  const picks = useMemo(() => {
-    if (!traceEvents || targetEventIndex === -1) return undefined;
-    let turnStart = 0;
-
-    for (let index = targetEventIndex; index >= 0; index -= 1) {
-      if (traceEvents[index].kind === "user") {
-        turnStart = index;
-        break;
-      }
-    }
-
-    let nextUserIndex = -1;
-
-    for (
-      let index = targetEventIndex + 1;
-      index < traceEvents.length;
-      index += 1
-    ) {
-      if (traceEvents[index].kind === "user") {
-        nextUserIndex = index;
-        break;
-      }
-    }
-
-    const turnEnd =
-      nextUserIndex === -1 ? traceEvents.length - 1 : nextUserIndex - 1;
-
-    const events: [number, number] = [turnStart, turnEnd];
-
-    return [{ events }];
-  }, [traceEvents, targetEventIndex]);
-
-  if (data.status === "loading" || data.status === "idle") {
-    return (
-      <ReviewPanelFrame
-        label="Agent trace"
-        title={
-          trace ? `${sessionId.slice(0, 8)} · ${trace}` : sessionId.slice(0, 8)
-        }
-        onClose={onClose}
-        closeLabel="Close side peek"
-      >
-        <div {...stylex.props(panelStyles.peekBody)}>
-          <p {...stylex.props(traceStyles.note)}>Loading trace…</p>
-        </div>
-      </ReviewPanelFrame>
-    );
-  }
-
-  if (data.status === "error") {
-    return (
-      <ReviewPanelFrame
-        label="Agent trace"
-        title={sessionId.slice(0, 8)}
-        onClose={onClose}
-        closeLabel="Close side peek"
-      >
-        <div {...stylex.props(panelStyles.peekBody)}>
-          <p {...stylex.props(traceStyles.note, textStyles.error)}>
-            {data.error}
-          </p>
-        </div>
-      </ReviewPanelFrame>
-    );
-  }
-
-  const loadedTrace = data.trace;
-  const events = loadedTrace.events;
-
-  const headerAccessory = (
-    <Button
-      xstyle={traceStyles.peekOpenFull}
-      onClick={() => {
-        openTraceSession?.({
-          sessionId,
-          trace,
-          eventIndex: targetEventIndex >= 0 ? targetEventIndex : undefined,
-        });
-        onClose();
-      }}
-    >
-      Full Trace
-      <ExternalLinkIcon xstyle={iconStyles.inline} />
-    </Button>
-  );
-
-  return (
-    <ReviewPanelFrame
-      label="Agent trace"
-      title={
-        loadedTrace.title ??
-        (trace ? `${sessionId.slice(0, 8)} · ${trace}` : sessionId.slice(0, 8))
-      }
-      titleAccessory={headerAccessory}
-      onClose={onClose}
-      closeLabel="Close side peek"
-    >
-      <div {...stylex.props(panelStyles.peekBody)}>
-        {targetEventIndex === -1 ? (
-          <p {...stylex.props(traceStyles.note)}>
-            Quote not found in this session transcript.
-          </p>
-        ) : (
-          <TraceDocument
-            key={`${sessionId}-${trace ?? ""}-${targetEventIndex}-${quote}`}
-            events={events}
-            targetEventIndex={targetEventIndex}
-            highlightQuote={quote}
-            picks={picks}
-            scoped
-          />
-        )}
-      </div>
-    </ReviewPanelFrame>
-  );
-}
-
 function ReviewPeekPanel({
   anchor,
   content,
@@ -905,18 +743,6 @@ function ReviewPeekPanel({
   content: ReviewPeekContent;
   onClose: () => void;
 }) {
-  if (content.kind === "trace-quote") {
-    return (
-      <TraceQuotePeekPanel
-        sessionId={content.sessionId}
-        trace={content.trace}
-        event={content.event}
-        quote={content.quote}
-        onClose={onClose}
-      />
-    );
-  }
-
   if (!anchor) return null;
 
   return (
@@ -930,10 +756,7 @@ function CodeReviewPeekPanel({
   onClose,
 }: {
   anchor: PeekAnchor;
-  content: Extract<
-    ReviewPeekContent,
-    { kind: "source" | "inline-code" | "explanation" }
-  >;
+  content: ReviewPeekContent;
   onClose: () => void;
 }) {
   const { softwareMapEnabled, openSoftwareMapElement } = useReviewActions();

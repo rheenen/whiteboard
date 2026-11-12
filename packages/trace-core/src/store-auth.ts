@@ -1,4 +1,4 @@
-// Login, logout, and identity for the hosted trace store.
+// Login, logout, and identity for the hosted service.
 //
 // A device-flow login (ported from the dev CLI's auth/device.ts) stores a
 // bearer token under $DEV_REVIEW_HOME/auth.json. Every store-bound command
@@ -19,9 +19,8 @@ import {
 } from "./cli-output";
 import { errorMessage } from "./error-message";
 import { StoreApiError, StoreClient } from "./store-client";
-import { normalizeStoreOrigin } from "./store-origin";
+import { DEFAULT_HOSTED_ORIGIN, normalizeStoreOrigin } from "./store-origin";
 import { devReviewHome } from "./trace-home";
-import { DEFAULT_HOSTED_ORIGIN } from "./trace-storage/config";
 
 export const DEFAULT_STORE_ORIGIN = DEFAULT_HOSTED_ORIGIN;
 
@@ -70,8 +69,8 @@ export async function readStoreAuth(
 
   if (!result.success) return null;
 
-  // A login for an origin this reader cannot name is no login: every trace
-  // destination must be a bare https origin.
+  // A login for an origin this reader cannot name is no login: every
+  // origin must be a bare https origin.
   try {
     return { ...result.data, origin: normalizeStoreOrigin(result.data.origin) };
   } catch {
@@ -134,7 +133,6 @@ export async function openUrlInBrowser(url: string): Promise<void> {
 export async function runStoreLogin(input: {
   origin?: string;
   noBrowser?: boolean;
-  traces?: boolean;
   json?: boolean;
   stdout: Writable;
   stderr: Writable;
@@ -165,28 +163,10 @@ export async function runStoreLogin(input: {
   const openUrl = input.openUrl ?? openUrlInBrowser;
   const sleep = input.sleep ?? defaultSleep;
   const client = new StoreClient({ origin, fetch: input.fetch });
-  const existing = input.traces ? await readStoreAuth(input.env) : null;
-
-  let expectedUser: string | undefined;
-
-  if (existing?.origin === origin) {
-    try {
-      expectedUser = (
-        await new StoreClient({
-          origin,
-          token: existing.token,
-          fetch: input.fetch,
-        }).session()
-      ).user.id;
-    } catch {
-      // An expired saved session must not prevent a fresh device login.
-    }
-  }
-
   let device: Awaited<ReturnType<StoreClient["deviceCode"]>>;
 
   try {
-    device = await client.deviceCode(input.traces ?? true);
+    device = await client.deviceCode();
   } catch (error) {
     return failWithJsonError(
       output,
@@ -251,9 +231,6 @@ export async function runStoreLogin(input: {
 
   try {
     ({ user } = await authedClient.session());
-
-    if (expectedUser && user.id !== expectedUser)
-      throw new Error("Authorize traces with the same GitHub account.");
   } catch (error) {
     return failWithJsonError(
       output,
@@ -335,7 +312,7 @@ export async function runStoreWhoami(input: {
       "whoami",
       error instanceof StoreApiError
         ? error.message
-        : "Could not reach the hosted trace store.",
+        : "Could not reach the hosted service.",
     );
   }
 

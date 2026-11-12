@@ -378,9 +378,6 @@ importers:
       '@dev.fast/trace-core':
         specifier: workspace:*
         version: link:../trace-core
-      '@dev.fast/trace-protocol':
-        specifier: workspace:*
-        version: link:../trace-protocol
       '@dev.fast/whiteboard-document':
         specifier: workspace:*
         version: link:../whiteboard-document
@@ -423,9 +420,6 @@ importers:
       '@dev.fast/json':
         specifier: workspace:*
         version: link:../json
-      '@dev.fast/trace-protocol':
-        specifier: workspace:*
-        version: link:../trace-protocol
       zod:
         specifier: 'catalog:'
         version: 4.6.6
@@ -455,9 +449,6 @@ importers:
       '@dev.fast/review-share-protocol':
         specifier: workspace:*
         version: link:../../review-share-protocol
-      '@dev.fast/trace-protocol':
-        specifier: workspace:*
-        version: link:../../trace-protocol
       '@dev.fast/whiteboard':
         specifier: workspace:*
         version: link:..
@@ -570,12 +561,6 @@ importers:
       '@dev.fast/local-vcs':
         specifier: workspace:0.1.0
         version: link:../local-vcs
-      '@dev.fast/trace-protocol':
-        specifier: workspace:*
-        version: link:../trace-protocol
-      commander:
-        specifier: 14.0.3
-        version: 14.0.3
       zod:
         specifier: 'catalog:'
         version: 4.6.6
@@ -592,16 +577,6 @@ importers:
       typescript:
         specifier: 6.0.3
         version: 6.0.3
-      vitest:
-        specifier: 4.1.12
-        version: 4.1.12(@types/node@24.12.2)(@vitest/browser-playwright@4.1.12)(esbuild@0.28.1)(jsdom@29.1.1)(tsx@4.21.0)
-
-  packages/trace-protocol:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.6
-    devDependencies:
       vitest:
         specifier: 4.1.12
         version: 4.1.12(@types/node@24.12.2)(@vitest/browser-playwright@4.1.12)(esbuild@0.28.1)(jsdom@29.1.1)(tsx@4.21.0)

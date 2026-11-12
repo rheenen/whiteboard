@@ -56,8 +56,8 @@ function policyDisablesSharing(runtimeRoot: string): boolean {
 }
 
 /** Copies the install policy into `DEV_REVIEW_SHARING_DISABLED`, so code
- * that cannot read the policy file (the hosted trace store client in
- * trace-core) and every child process see the same answer. The user's marker
+ * that cannot read the policy file (the hosted store client in trace-core)
+ * and every child process see the same answer. The user's marker
  * stays out of it: that code reads the marker itself, so turning the Desktop
  * setting on again applies at once. */
 export function applySharingPolicy(env: NodeJS.ProcessEnv = process.env) {
@@ -66,7 +66,7 @@ export function applySharingPolicy(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /** Records the Desktop setting from `DEV_REVIEW_DESKTOP_SHARING` as the
- * user's marker, so agent trace hooks and the CLI follow it too. */
+ * user's marker, so the CLI and agents' commands follow it too. */
 export function applyDesktopSharingSetting(
   env: NodeJS.ProcessEnv = process.env,
 ) {

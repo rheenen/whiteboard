@@ -84,18 +84,6 @@ function stripModuleStatements(source) {
 
 // Dependencies first: every module may only name things declared above it,
 // because concatenation is all that replaces the dropped relative imports.
-const traceContractsPath =
-  sourceRootFlag === -1
-    ? path.resolve(
-        path.dirname(fileURLToPath(import.meta.url)),
-        "..",
-        "..",
-        "trace-protocol",
-        "src",
-        "contracts.ts",
-      )
-    : path.join(sourceRoot, "trace-contracts.ts");
-
 const jsonSourceRoot =
   sourceRootFlag === -1
     ? path.resolve(
@@ -117,7 +105,6 @@ const diffrSourceRoot = path.join(
 const MODULE_PATHS = [
   path.join(jsonSourceRoot, "runtime-value.ts"),
   path.join(jsonSourceRoot, "json.ts"),
-  traceContractsPath,
   path.join(diffrSourceRoot, "contract.ts"),
   path.join(diffrSourceRoot, "stream.ts"),
   path.join(sourceRoot, "structural-diff.ts"),

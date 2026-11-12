@@ -21,17 +21,9 @@ export interface ConnectPromptInput {
   /** False when the serving package has no built CLI (Desktop from source): prompts fall back to a bare `whiteboard`. */
   hasShim: boolean;
   legacyPaths: string[];
-  traceEnabled: boolean;
-  fffBinaryPath: string;
-  fffCorpusRoot: string;
   /** Defaults to this process's platform. */
   platform?: NodeJS.Platform;
 }
-
-export const FFF_INSTALL_URL =
-  "https://raw.githubusercontent.com/dmtrKovalenko/fff/v0.11.0/install-mcp.sh";
-
-export const PI_FFF_PACKAGE = "npm:@ff-labs/pi-fff";
 
 export const PI_WHITEBOARD_PACKAGE = "npm:@dev.fast/pi-whiteboard";
 
@@ -65,22 +57,6 @@ function shellQuote(value: string): string {
 
 function numbered(steps: string[]): string[] {
   return steps.map((step, index) => `${index + 1}. ${step}`);
-}
-
-function fffSteps(input: ConnectPromptInput, target: InstallTarget): string[] {
-  if (!input.traceEnabled) return [];
-
-  if (target === "pi" || target === "omp") {
-    return [`Run: ${target} install ${PI_FFF_PACKAGE}`];
-  }
-
-  const binary = shellQuote(input.fffBinaryPath);
-  const root = shellQuote(input.fffCorpusRoot);
-  const add = target === "claude" ? "claude mcp add -s user" : "codex mcp add";
-
-  return [
-    `Unless \`${target} mcp get fff\` finds an existing server, run:\n\n\`\`\`sh\n[ -x ${binary} ] || curl -fsSL ${FFF_INSTALL_URL} | bash\n${add} fff -- ${binary} ${root}\n\`\`\``,
-  ];
 }
 
 export const WHITEBOARD_MARKETPLACE = "devdotfast/whiteboard";
@@ -298,14 +274,6 @@ export function connectPrompt(
     return "Connect this agent to dev.fast Whiteboard.\n\nStop and ask me to install the whiteboard command in Whiteboard Desktop (Settings → Command line), then run this connect command again. The connection requires ~/.local/bin/whiteboard.";
   }
 
-  const extra =
-    target === "claude" ||
-    target === "codex" ||
-    target === "pi" ||
-    target === "omp"
-      ? fffSteps(input, target)
-      : [];
-
   const verify =
     target === "pi"
       ? "Ask me to run /reload, then call `session_get_instructions` on the Whiteboard server (older Pi: `whiteboard api session_get_instructions '{}'`). Do not author anything yet."
@@ -326,10 +294,7 @@ export function connectPrompt(
         : []),
       ...(target === "cursor"
         ? cursorSteps()
-        : [
-            ...pluginSteps(target, input.platform ?? process.platform),
-            ...extra,
-          ]),
+        : pluginSteps(target, input.platform ?? process.platform)),
       verify,
     ]),
   ].join("\n");

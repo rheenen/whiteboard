@@ -1,6 +1,8 @@
-// A store origin names the destination of every trace. Consent records,
-// cache directories, and provenance records all key on it, so one origin must
-// always print the same way and can never carry a path, a query, or a login.
+// A store origin names the hosted service a login belongs to. Saved logins
+// key on it, so one origin must always print the same way and can never carry
+// a path, a query, or a login.
+
+export const DEFAULT_HOSTED_ORIGIN = "https://app.dev.fast";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -14,7 +16,7 @@ export function normalizeStoreOrigin(value: string): string {
   try {
     url = new URL(value.trim());
   } catch {
-    throw new Error(`The trace store origin is not a URL: ${value}`);
+    throw new Error(`The store origin is not a URL: ${value}`);
   }
 
   const local = LOCAL_HOSTS.has(url.hostname);
@@ -22,7 +24,7 @@ export function normalizeStoreOrigin(value: string): string {
 
   if (!secure && !(local && url.protocol === "http:")) {
     throw new Error(
-      `The trace store origin must use https (http is allowed for localhost): ${value}`,
+      `The store origin must use https (http is allowed for localhost): ${value}`,
     );
   }
 
@@ -34,7 +36,7 @@ export function normalizeStoreOrigin(value: string): string {
     url.pathname !== "/"
   ) {
     throw new Error(
-      `The trace store origin must be a bare origin without a path, query, or login: ${value}`,
+      `The store origin must be a bare origin without a path, query, or login: ${value}`,
     );
   }
 

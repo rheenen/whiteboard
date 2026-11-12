@@ -98,7 +98,7 @@ it("surfaces a failed create and refuses an oversized share before any request",
 
   await expect(client.create(shared)).rejects.toThrow("503");
   send.mockClear();
-  shared.traces.large = "x".repeat(MAX_SHARE_BYTES);
+  shared.images.large = { png: "x".repeat(MAX_SHARE_BYTES) };
   await expect(client.create(shared)).rejects.toBeInstanceOf(ReviewInputError);
   expect(send).not.toHaveBeenCalled();
 });

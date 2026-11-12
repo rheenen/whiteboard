@@ -173,7 +173,6 @@ const apiWith = (store: ReviewStore, threads: AskThreads) =>
     undefined,
     undefined,
     undefined,
-    undefined,
     { threads, agents: async () => [] },
   );
 
@@ -323,7 +322,6 @@ it("serves a saved conversation without its agent or its checkout", async () => 
     undefined,
     undefined,
     undefined,
-    undefined,
     { threads: noThreads(), agents: async () => [] },
   );
 
@@ -366,7 +364,6 @@ it("lists a project's conversations on every board in it, each with the board it
   const api = createReviewApi(
     store,
     {} as LocalReviewData,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -417,7 +414,6 @@ it("lets a thread change boards in any project, and lists the boards it changed"
   const api = createReviewApi(
     store,
     local,
-    undefined,
     undefined,
     undefined,
     undefined,
@@ -585,7 +581,6 @@ it("streams every project's threads with where each lives and the boards it chan
     undefined,
     undefined,
     undefined,
-    undefined,
     {
       // No agent runs here; the stream only asks threads for their status.
       threads: new AskThreads(async () => {
@@ -664,7 +659,6 @@ it("follows as many threads as a review has open over one watch", async () => {
   const api = createReviewApi(
     store,
     {} as LocalReviewData,
-    undefined,
     undefined,
     undefined,
     undefined,

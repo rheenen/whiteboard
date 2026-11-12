@@ -25,9 +25,8 @@ import {
   reviewUiStateKey,
   writeReviewUiState,
 } from "@canvas/review-ui-state";
-import { boardLink, traceQuoteLink } from "@dev.fast/whiteboard-document";
+import { boardLink } from "@dev.fast/whiteboard-document";
 import * as stylex from "@stylexjs/stylex";
-import type { Mark, ResolvedPos } from "@tiptap/pm/model";
 import {
   type EditorState,
   NodeSelection,
@@ -72,23 +71,6 @@ import {
 // A board on the canvas, editable in place: the editor document, its
 // autosave, the block the person is in, and what other authors write.
 
-/** The text of the link at `$pos`, across the marks inside it. */
-function linkText($pos: ResolvedPos, link: Mark): string {
-  const parent = $pos.parent;
-  const index = $pos.index();
-  let from = index;
-  let to = index;
-
-  while (from > 0 && link.isInSet(parent.child(from - 1).marks)) from--;
-
-  while (to < parent.childCount && link.isInSet(parent.child(to).marks)) to++;
-  let text = "";
-
-  for (let i = from; i < to; i++) text += parent.child(i).textContent;
-
-  return text;
-}
-
 /** The document data, kept the same while what rich blocks read from it
  * stays the same: resources, links and the board's source. */
 function useStableData(data: ApiDocumentData): ApiDocumentData {
@@ -104,7 +86,6 @@ function useStableData(data: ApiDocumentData): ApiDocumentData {
     // A range edited under the same name keeps its id: compare what peeks show.
     [...data.anchors.values()].map(({ id, title, peek }) => [id, title, peek]),
     [...data.images.keys()],
-    [...data.traces.keys()],
     [...data.boards.keys()],
     [...data.maps.keys()],
     data.commits?.length,
@@ -408,26 +389,6 @@ export function BoardEditor({
         return true;
       }
 
-      const quote = traceQuoteLink(href);
-
-      if (quote) {
-        const events = latest.current.traces.get(quote.traceId)?.events;
-
-        const event = events?.findIndex((item) => item.id === quote.eventId);
-
-        openPeek({
-          kind: "peek",
-          content: {
-            kind: "trace-quote",
-            sessionId: quote.traceId,
-            event: event === undefined || event < 0 ? undefined : event,
-            quote: linkText($pos, link),
-          },
-        });
-
-        return true;
-      }
-
       const fragment = href.startsWith("#") ? href.slice(1) : undefined;
       const board = boardLink(href);
 
@@ -578,11 +539,7 @@ export function BoardEditor({
   const openKey = useReviewPanel((state) => {
     const peek = state.active?.kind === "peek" ? state.active : null;
 
-    const open: OpenLink = peek?.anchor
-      ? { anchorId: peek.anchor.id }
-      : peek?.content.kind === "trace-quote"
-        ? { traceId: peek.content.sessionId, event: peek.content.event }
-        : null;
+    const open: OpenLink = peek?.anchor ? { anchorId: peek.anchor.id } : null;
 
     return JSON.stringify(open);
   });

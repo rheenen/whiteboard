@@ -1,6 +1,5 @@
-/** A reader's place in a review survives a renderer reload: a commit diff, a picked trace, and a fullscreen tour step. */
+/** A reader's place in a review survives a renderer reload: a commit diff and a fullscreen tour step. */
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -11,9 +10,7 @@ import {
   createDiagramReview,
   createReview,
   inView,
-  openFullTrace,
   scopeToCommit,
-  showView,
 } from "../harness.mjs";
 
 export const name = "canvas-resume";
@@ -23,14 +20,6 @@ export const phase = 1;
 export const options = {};
 
 const TITLE = "Canvas resume review";
-
-const trace = (label) => ({
-  label,
-  events: [
-    { id: "0", role: "user", text: `${label}: ship the order queue.` },
-    { id: "1", role: "assistant", text: `${label}: the queue ships.` },
-  ],
-});
 
 /** Reloads the whole workbench renderer; the review's own window comes back with its canvas. */
 async function reloadWindow(ctx, page) {
@@ -74,26 +63,10 @@ export async function run(ctx) {
     await ctx.apiOk("/reviews-api/repositories", "POST", { path: repo })
   ).id;
 
-  // Two retained traces give the Trace view a picker with a non-default choice.
-  const traceIds = [randomUUID(), randomUUID()];
-
-  for (const [index, id] of traceIds.entries())
-    await ctx.apiOk("/reviews-api/resources", "POST", {
-      id,
-      repositoryId,
-      kind: "trace",
-      trace: trace(`Trace ${index + 1}`),
-    });
-
   const review = await createReview(ctx, {
     title: TITLE,
     head: ship,
-    blocks: traceIds.map((traceId, index) => ({
-      type: "trace_quote",
-      traceId,
-      eventId: "1",
-      text: `Trace ${index + 1}: the queue ships.`,
-    })),
+    blocks: [{ type: "markdown", markdown: "Ship the order queue." }],
   });
 
   const command = (operation) =>
@@ -156,46 +129,6 @@ export async function run(ctx) {
   ctx.check(
     "a new version keeps a listed commit's scope and drops an unlisted one",
   );
-
-  const trigger = page.locator(
-    '.review-view-region--trace button[aria-haspopup="menu"]',
-  );
-
-  const option = (label) =>
-    page
-      .getByRole("menu", { name: "Agent sessions" })
-      .getByRole("menuitemradio")
-      .filter({ hasText: label });
-
-  await showView(ctx, "Whiteboard", page);
-  await openFullTrace(
-    ctx,
-    page
-      .locator('.review-canvas-root [data-review-api] a[href^="#trace-"]')
-      .filter({ hasText: "Trace 1" }),
-    page,
-  );
-  await trigger.click();
-  assert.equal(
-    await option("Trace 1").getAttribute("aria-checked"),
-    "true",
-    "the quoted trace is not the one shown",
-  );
-  await option("Trace 2").click();
-  await until(
-    async () =>
-      (await trigger.locator("span").nth(1).innerText()).trim() === "Trace 2",
-    "the picked trace to show",
-  );
-  await reloadWindow(ctx, page);
-  await inView(ctx, "trace", page);
-  await trigger.click();
-  await until(
-    async () =>
-      (await option("Trace 2").getAttribute("aria-checked")) === "true",
-    "the picked trace to resume after the reload",
-  );
-  ctx.check("a picked trace resumes after a reload");
 
   await createDiagramReview(ctx);
   page = await ctx.apiCanvasFor(DIAGRAM_REVIEW_TITLE);

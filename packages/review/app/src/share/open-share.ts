@@ -8,7 +8,6 @@ import {
   repositoryLabel,
   shareBundleSchema,
 } from "@dev.fast/review-share-protocol";
-import { traceSchema } from "@review/review-api/trace-schema";
 import { z } from "zod";
 
 import { boardSnapshotSchema, boardView } from "./board-data";
@@ -42,7 +41,7 @@ export async function openShare(
       shared: { cloneUrl },
     },
     {
-      traces: z.record(z.string(), traceSchema).parse(bundle.traces),
+      // A bundle may still carry retired trace quotes; their traces are ignored.
       // SAFETY: the sharer wrote these maps; a malformed one fails in its block.
       maps: bundle.maps as Record<string, SavedMap>,
       commits: z.array(ReviewCommitSummarySchema).parse(bundle.commits),

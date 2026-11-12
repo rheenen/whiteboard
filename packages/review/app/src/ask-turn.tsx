@@ -164,16 +164,6 @@ function toolActivity(
     };
   }
 
-  // fff searches Whiteboard's copy of agents' traces.
-  if (mcp?.[1] === "fff")
-    return {
-      ...shared,
-      category: "traces",
-      label:
-        entry.summary ??
-        (entry.input ? `Search traces for ${entry.input}` : "Search traces"),
-    };
-
   if (mcp)
     return {
       ...shared,
@@ -214,10 +204,6 @@ const counted = new Map<string, [one: string, many: (count: number) => string]>(
     ["execute", ["ran a command", (count) => `ran ${count} commands`]],
     ["read", ["read a file", (count) => `read ${count} files`]],
     ["search", ["searched once", (count) => `searched ${count} times`]],
-    [
-      "traces",
-      ["searched the traces", (count) => `searched the traces ${count} times`],
-    ],
     ["tools", ["loaded tools", (count) => `loaded tools ${count} times`]],
     [
       "review",

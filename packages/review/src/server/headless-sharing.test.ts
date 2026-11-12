@@ -80,7 +80,7 @@ it("commits and uploads through a real headless server and CLI without Desktop, 
       token: discovery.token,
     });
 
-    const registered = await client.post<{ id: string }>("/repositories", {
+    await client.post("/repositories", {
       path: fixture.repo,
     });
 
@@ -97,16 +97,6 @@ it("commits and uploads through a real headless server and CLI without Desktop, 
       },
     });
 
-    const traceId = randomUUID();
-    await client.post("/resources", {
-      id: traceId,
-      repositoryId: registered.id,
-      kind: "trace",
-      trace: {
-        label: "Evidence",
-        events: [{ id: "one", role: "user", text: "Explain the answer" }],
-      },
-    });
     await client.post("/commands", {
       operation: {
         type: "edit",
@@ -120,12 +110,6 @@ it("commits and uploads through a real headless server and CLI without Desktop, 
               {
                 type: "code_peek",
                 source: `head/${fixture.sourceFile}#L1`,
-              },
-              {
-                type: "trace_quote",
-                traceId,
-                eventId: "one",
-                text: "Explain the answer",
               },
             ],
           },

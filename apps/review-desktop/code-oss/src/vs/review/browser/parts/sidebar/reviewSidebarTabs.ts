@@ -13,7 +13,7 @@ const TAB_VIEWS: Partial<Record<ReviewSidebarPaneId, "review" | "diff">> = {
 	diff: "diff",
 };
 
-/** The tab that owns a view; Trace and Map show under Whiteboard. */
+/** The tab that owns a view; Map shows under Whiteboard. */
 function tabOfView(view: string): ReviewSidebarPaneId {
 	return view === "diff" ? view : "whiteboard";
 }

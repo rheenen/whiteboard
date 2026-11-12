@@ -139,19 +139,19 @@ version still running. A server you started yourself keeps running.
 
 `review.remote.install` controls this:
 
-| Value | Behavior |
-|---|---|
+| Value           | Behavior                                               |
+| --------------- | ------------------------------------------------------ |
 | `ask` (default) | Ask once per host, unless it has a recognised install. |
-| `always` | Install without asking. |
-| `never` | Never install; use `whiteboard` on the host's `PATH`. |
+| `always`        | Install without asking.                                |
+| `never`         | Never install; use `whiteboard` on the host's `PATH`.  |
 
 What Desktop writes on the remote:
 
-| Path | What it is |
-|---|---|
-| `~/.dev/whiteboard-remote/versions/<version>/` | One version, ~250 MB, with its own Node. |
-| `~/.dev/whiteboard-remote/install.lock/` | Present while an install runs. |
-| `~/.local/bin/whiteboard` | Launcher for the newest version, if that path is free or already Desktop's. |
+| Path                                           | What it is                                                                  |
+| ---------------------------------------------- | --------------------------------------------------------------------------- |
+| `~/.dev/whiteboard-remote/versions/<version>/` | One version, ~250 MB, with its own Node.                                    |
+| `~/.dev/whiteboard-remote/install.lock/`       | Present while an install runs.                                              |
+| `~/.local/bin/whiteboard`                      | Launcher for the newest version, if that path is free or already Desktop's. |
 
 With `DEV_REVIEW_HOME` set on the remote, `whiteboard-remote/` lives under it.
 Reviews are kept in `~/.dev`.
@@ -179,12 +179,12 @@ Optional groups are installed on each remote at its next connection, at your
 laptop's version. Groups you never turned on are never installed; turning one
 off leaves it on the remote, unused.
 
-| Group | Needs on the remote's login `PATH` | Downloads |
-|---|---|---|
-| Go | `go` | Go |
-| Rust | `cargo`, `rustc` | rust-analyzer, ~16 MB |
-| Swift | `swift` | Swift, LLDB DAP, ~16 MB |
-| C# | `dotnet` (.NET SDK) | C#, .NET Runtime, ~80 MB; OmniSharp from Microsoft on first start |
+| Group | Needs on the remote's login `PATH` | Downloads                                                         |
+| ----- | ---------------------------------- | ----------------------------------------------------------------- |
+| Go    | `go`                               | Go                                                                |
+| Rust  | `cargo`, `rustc`                   | rust-analyzer, ~16 MB                                             |
+| Swift | `swift`                            | Swift, LLDB DAP, ~16 MB                                           |
+| C#    | `dotnet` (.NET SDK)                | C#, .NET Runtime, ~80 MB; OmniSharp from Microsoft on first start |
 
 Swift and C# install but do not answer hovers yet, locally or remotely: Swift
 needs the task API, and on remotes `node-pty`. Their debuggers never start;
@@ -380,12 +380,12 @@ targets, and `REVIEW_DESKTOP_PRECOMPILED=1 scripts/package-macos.sh` consumes it
 on each macOS build leg (`darwin-arm64` and `darwin-x64`), packaging the target
 of the host it runs on.
 
-| Produced on Linux and transferred                                                                        | Produced or assembled on macOS                         |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Code OSS `out-build`, `out-vscode-min`, and `out`                                                        | Electron application bundle                            |
-| Compiled built-in extensions in `.build/extensions`                                                      | Darwin-native npm closure installed by `pnpm`          |
-| Manifest-selected `darwin-arm64` and `darwin-x64` VSIX payloads, including `ty` and rust-analyzer       | Manifest-selected extensions copied into the final app |
-| Review canvas/server and required workspace `dist` directories                                           | App icon, signatures, notarization, ZIP, and DMG       |
+| Produced on Linux and transferred                                                                 | Produced or assembled on macOS                         |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Code OSS `out-build`, `out-vscode-min`, and `out`                                                 | Electron application bundle                            |
+| Compiled built-in extensions in `.build/extensions`                                               | Darwin-native npm closure installed by `pnpm`          |
+| Manifest-selected `darwin-arm64` and `darwin-x64` VSIX payloads, including `ty` and rust-analyzer | Manifest-selected extensions copied into the final app |
+| Review canvas/server and required workspace `dist` directories                                    | App icon, signatures, notarization, ZIP, and DMG       |
 
 The curated-extension handoff is manifest-driven. Linux materializes the
 variants for every Darwin target, copies each into
@@ -531,16 +531,16 @@ like Home and Agent Setup, not the stock VS Code settings editor. It holds:
 | Privacy               | Share anonymous usage data — see [docs/telemetry.md](../../docs/telemetry.md) |
 | Editor                | Theme, Keymap                                                                 |
 | Tools                 | Extensions                                                                    |
-| Experimental Features | Software Map, Trace capture                                                   |
+| Experimental Features | Software Map                                                                  |
 
 Software Map defaults to off. Enable it to add the Map tab to reviews.
 Disable it to remove Map entry points. This preference persists in the
 application profile. The change does not require a reload.
 
-Trace capture defaults to off. Enabling capture takes S3/R2 credentials,
-installs the agent session hooks and the `trace-archaeology` skill for every
-installed agent, and lets reviews quote agent sessions. Disabling removes the hooks and skill again. The state lives
-in the review server's machine trace settings, not the application profile.
+This build has no trace capture. The CLI setup at startup and **Uninstall
+Whiteboard Desktop** remove the agent and Git hooks that earlier builds
+installed for it. Boards that quote agent sessions still open and show a
+placeholder for each quote.
 
 The application menu is macOS only. On Windows and Linux the same surfaces are
 available from the command palette (`review.openSettings`).

@@ -32,7 +32,6 @@ import {
 import { Row, Section, sectionId } from "./settings-section";
 import { settingsStyles as styles } from "./settings-styles";
 import { withClass } from "./stylex-props";
-import { TraceCaptureSection } from "./trace-capture-section";
 import { SegmentedControl, labeledOptions } from "./ui/segmented";
 
 const COLOR_THEME_GROUPS: [ReviewColorThemeKind, string][] = [
@@ -227,8 +226,8 @@ export function SettingsPage({
                   label="whiteboard command"
                   description={
                     install.status.shim.installed
-                      ? `Installed at ${install.status.shim.path}. Your agents and trace capture run it.`
-                      : "Adds whiteboard to your shell PATH. Your agents and trace capture run it."
+                      ? `Installed at ${install.status.shim.path}. Your agents run it.`
+                      : "Adds whiteboard to your shell PATH. Your agents run it."
                   }
                 >
                   {install.status.shim.installed ||
@@ -356,7 +355,7 @@ export function SettingsPage({
                   </Row>
                   <Row
                     label="Reading typeface"
-                    description="Whiteboard text, Ask answers, and trace notes."
+                    description="Whiteboard text and Ask answers."
                   >
                     <SegmentedControl
                       label="Reading typeface"
@@ -600,18 +599,12 @@ export function SettingsPage({
                   }
                 />
               </Row>
-              {install ? (
-                <TraceCaptureSection
-                  install={install}
-                  onStatusChange={setInstallStatus}
-                />
-              ) : null}
             </Section>
 
             <Section label="Uninstall">
               <Row
                 label="Uninstall Whiteboard"
-                description="Removes the whiteboard command and trace setup. Your sessions stay on disk."
+                description="Removes the whiteboard command. Your sessions stay on disk."
               >
                 <Button onClick={settings.uninstallApp}>Uninstall…</Button>
               </Row>

@@ -19,14 +19,12 @@ import {
   pinsSchema,
   resourceReferences,
 } from "@dev.fast/whiteboard-document";
-import { textIncludesQuote } from "@review/evidence.js";
 import type { LocalReviewData } from "@review/review-api/local-data.js";
 import { pullRequestUrl } from "@review/review-api/origin.js";
 import type {
   ReviewStore,
   SharedProvenance,
 } from "@review/review-api/store.js";
-import { traceSchema } from "@review/review-api/trace-schema.js";
 import {
   devReviewHome,
   safeStorageSegment,
@@ -120,16 +118,13 @@ export interface ShareAttribution {
   sharedAt: number;
 }
 
-/** Commits and traces live in a checkout; a document alone needs none. */
+/** Commits live in a checkout; a document alone needs none. A bundle's
+ * `traces` are ignored: this build has no trace capture. */
 export function needsRepository(
-  bundle: ShareBundle,
+  _bundle: ShareBundle,
   snapshot: Parameters<typeof referenceCommits>[0],
 ) {
-  return Boolean(
-    snapshot.pins ||
-    referenceCommits(snapshot).length ||
-    Object.keys(bundle.traces).length,
-  );
+  return Boolean(snapshot.pins || referenceCommits(snapshot).length);
 }
 
 export function validateShareBundle(input: ShareBundle) {
@@ -168,32 +163,7 @@ export function validateShareBundle(input: ShareBundle) {
   if (!snapshot.pins && Object.keys(maps).length)
     throw new Error("Shared maps require source pins.");
 
-  const traces = new Map<
-    string,
-    Map<string, z.infer<typeof traceSchema>["events"][number]>
-  >();
-
   for (const block of resourceReferences(snapshot.document)) {
-    if (block.type === "trace_quote") {
-      let events = traces.get(block.traceId);
-
-      if (!events) {
-        if (!Object.hasOwn(bundle.traces, block.traceId))
-          throw new Error("Missing shared trace.");
-        const trace = traceSchema.parse(bundle.traces[block.traceId]);
-        events = new Map(trace.events.map((event) => [event.id, event]));
-
-        if (events.size !== trace.events.length)
-          throw new Error("Duplicate shared trace event.");
-        traces.set(block.traceId, events);
-      }
-
-      const event = events.get(block.eventId);
-
-      if (!event || !textIncludesQuote(event.text, block.text))
-        throw new Error("Shared quote does not match its trace.");
-    }
-
     if (block.type === "software_map") {
       const map = Object.hasOwn(maps, block.mapVersionId)
         ? maps[block.mapVersionId]
@@ -397,22 +367,10 @@ export async function importShare(
     await data.validateSources(pins, ranges);
 
   // The copy's resources are its own: the sender's ids may be in this store.
-  const ids = new Map(
-    [...Object.keys(bundle.traces), ...Object.keys(maps)].map((id) => [
-      id,
-      randomUUID(),
-    ]),
-  );
+  // Shared traces are dropped; their quotes stay as stored placeholders.
+  const ids = new Map(Object.keys(maps).map((id) => [id, randomUUID()]));
 
   if (repositoryId) {
-    for (const [id, trace] of Object.entries(bundle.traces))
-      await data.upload({
-        kind: "trace",
-        id: ids.get(id),
-        repositoryId,
-        trace,
-      });
-
     for (const [
       id,
       { commit, side, elements, relationships },

@@ -1,4 +1,3 @@
-import type { LoadedAgentTrace } from "@canvas/use-agent-trace";
 import type {
   ReviewApiSummary,
   ReviewBoardPlace,
@@ -27,7 +26,6 @@ export interface ReviewSessionData {
   headRef?: string;
   pullRequestNumber?: number;
   pullRequestUrl?: string;
-  traces: ReadonlyMap<string, LoadedAgentTrace>;
   place(signal?: AbortSignal): Promise<ReviewBoardPlace>;
   /** Its place, for a host that cannot read it. */
   knownPlace?: ReviewBoardPlace;

@@ -85,18 +85,18 @@ your laptop. A connected host is not sandboxed.
 First check that `ssh <alias>` works in a terminal without prompts you have
 not answered before.
 
-| State | Meaning | Fix |
-|---|---|---|
-| `connecting` | Opening SSH and starting the review server. | Wait. |
-| `installing` | Installing Desktop's version on the host. | Wait. |
-| `online` | Connected; reviews listed and open. | — |
-| `offline` | SSH is up but the review server does not answer (checked every 10 s, so within ~15 s). | Usually recovers. After three missed checks Desktop reattaches; a hung server then shows `unreachable` and the detail says to run `whiteboard server stop` on the host. |
-| `unreachable` | `ssh` failed, the connection dropped, or the server did not start. | Desktop retries every 1–60 s; **Retry** tries now. Follow the detail. |
-| `auth-failed` | Login refused, prompt cancelled, or host key mismatch. | Fix the login, then **Retry**. Not retried automatically. |
-| `not-installed` | Desktop's version is missing and was not installed. | **Install**, or [install by hand](#install-by-hand) and **Retry**. |
-| `unsupported` | The machine cannot run Whiteboard. Nothing was written. | Use another machine. |
-| `incompatible` | The host runs another Whiteboard version. | Run `whiteboard server stop` on the host and **Retry**, or update Desktop. |
-| `duplicate` | Several hosts report the same server id; none is used. | Same machine under two aliases: remove all but one. A copied review store: remove the copy's host, run `whiteboard server stop` then `whiteboard server reset-id` on it, and re-add. |
+| State           | Meaning                                                                                | Fix                                                                                                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `connecting`    | Opening SSH and starting the review server.                                            | Wait.                                                                                                                                                                                |
+| `installing`    | Installing Desktop's version on the host.                                              | Wait.                                                                                                                                                                                |
+| `online`        | Connected; reviews listed and open.                                                    | —                                                                                                                                                                                    |
+| `offline`       | SSH is up but the review server does not answer (checked every 10 s, so within ~15 s). | Usually recovers. After three missed checks Desktop reattaches; a hung server then shows `unreachable` and the detail says to run `whiteboard server stop` on the host.              |
+| `unreachable`   | `ssh` failed, the connection dropped, or the server did not start.                     | Desktop retries every 1–60 s; **Retry** tries now. Follow the detail.                                                                                                                |
+| `auth-failed`   | Login refused, prompt cancelled, or host key mismatch.                                 | Fix the login, then **Retry**. Not retried automatically.                                                                                                                            |
+| `not-installed` | Desktop's version is missing and was not installed.                                    | **Install**, or [install by hand](#install-by-hand) and **Retry**.                                                                                                                   |
+| `unsupported`   | The machine cannot run Whiteboard. Nothing was written.                                | Use another machine.                                                                                                                                                                 |
+| `incompatible`  | The host runs another Whiteboard version.                                              | Run `whiteboard server stop` on the host and **Retry**, or update Desktop.                                                                                                           |
+| `duplicate`     | Several hosts report the same server id; none is used.                                 | Same machine under two aliases: remove all but one. A copied review store: remove the copy's host, run `whiteboard server stop` then `whiteboard server reset-id` on it, and re-add. |
 
 While a host is not `online`, its reviews stay in Home as unavailable, and
 opening one says why.
@@ -118,7 +118,6 @@ Common problems:
 ## Not available for remote reviews yet
 
 - Sharing.
-- Traces.
 - Scratchpads; the scratchpad is always the laptop's.
 
 ## Remove a host

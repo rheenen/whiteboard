@@ -17,18 +17,6 @@ export const callEdgeMarker = stylex.defineMarker();
 /** A lens filter chip; its clear mark washes while it is hovered. */
 export const lensChipMarker = stylex.defineMarker();
 
-/** An agent trace tool call; its chevron turns and figure shows while open. */
-export const traceToolMarker = stylex.defineMarker();
-
-/** An agent trace tool run; its chevron turns and body shows while open. */
-export const traceGroupMarker = stylex.defineMarker();
-
-/** An agent trace turn's work; its chevron turns and body shows while open. */
-export const traceWorkedMarker = stylex.defineMarker();
-
-/** An agent trace gap or collapse row; its chip inks while it is hovered. */
-export const traceRowMarker = stylex.defineMarker();
-
 /** A software map frame; its expand button shows while it is hovered. */
 export const mapFrameMarker = stylex.defineMarker();
 
@@ -56,7 +44,7 @@ export const topbarActionsMarker = stylex.defineMarker();
 /** The review document article; prose styles hold only inside it. */
 export const documentMarker = stylex.defineMarker();
 
-/** A Markdown or trace quote block; paragraph and list styles hold inside it. */
+/** A Markdown block; paragraph and list styles hold inside it. */
 export const proseMarker = stylex.defineMarker();
 
 /** The side panel host; the panel takes its one grid cell. */

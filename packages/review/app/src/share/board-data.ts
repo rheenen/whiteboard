@@ -1,5 +1,4 @@
 import {
-  type BoardTrace,
   type SavedMap,
   createDocumentLoader,
   savedMapModel,
@@ -28,7 +27,6 @@ export interface BoardImage {
 export interface BoardParts {
   snapshot: Snapshot;
   images?: Record<string, BoardImage>;
-  traces?: Record<string, BoardTrace>;
   maps?: Record<string, SavedMap>;
   commits?: ReviewCommitSummary[];
   progress?: ReviewProgress;
@@ -47,7 +45,6 @@ export function boardData(parts: BoardParts): WhiteboardData {
 
   for (const node of resourceReferences(snapshot.document)) {
     const image = node.type === "image" && parts.images?.[node.assetId];
-    const trace = node.type === "trace_quote" && parts.traces?.[node.traceId];
 
     const saved =
       node.type === "software_map" && parts.maps?.[node.mapVersionId];
@@ -57,9 +54,6 @@ export function boardData(parts: BoardParts): WhiteboardData {
         node.assetId,
         URL.createObjectURL(new Blob([image.bytes], { type: image.type })),
       );
-
-    if (node.type === "trace_quote" && trace)
-      data.traces.set(node.traceId, trace);
 
     if (node.type === "software_map" && saved) {
       const model = savedMapModel(saved);

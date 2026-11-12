@@ -229,12 +229,8 @@ export function ReviewTopBar(): ReactElement {
         {sidebarLeads ? (
           <PageMoreMenu
             views={reviewViews
-              .filter((view) => view === "trace" || view === "map")
-              .map((view) => ({
-                view,
-                label:
-                  view === "map" ? "Map (Experimental)" : reviewViewLabel(view),
-              }))}
+              .filter((view) => view === "map")
+              .map((view) => ({ view, label: "Map (Experimental)" }))}
             onShowView={showView}
             folded={folded}
             onOpenContents={

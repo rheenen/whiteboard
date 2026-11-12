@@ -3,7 +3,7 @@
   "document": [
     {
       "type": "markdown",
-      "markdown": "A sequence, a database lens, a trace and a software map, for journeys that test what a reader's place in each survives.\n"
+      "markdown": "A sequence, a database lens and a software map, for journeys that test what a reader's place in each survives.\n"
     },
     {
       "type": "section",
@@ -152,26 +152,6 @@
               ]
             }
           ]
-        }
-      ]
-    },
-    {
-      "type": "section",
-      "title": "You're all done",
-      "children": [
-        {
-          "type": "markdown",
-          "markdown": "Trace quotes connect a Review to the agent conversation behind a change.\nSelect this quote from an illustrative session to read it in context:\n"
-        },
-        {
-          "type": "trace_quote",
-          "traceId": "fixture-trace",
-          "eventId": "0",
-          "text": "we want to have one shared server / source of truth for all agent chats."
-        },
-        {
-          "type": "markdown",
-          "markdown": "To capture your own sessions, open **Preferences \u2192 Settings \u2192 Experimental\nFeatures \u2192 Trace capture**. Enter your S3/R2 bucket credentials and choose\n**Enable**. Have everyone on your team do this (with the same bucket credentials) to sync and review each other's traces.\n\nTrace capture is off by default; this sample works without setup.\n"
         }
       ]
     },

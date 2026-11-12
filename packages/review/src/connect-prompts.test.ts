@@ -12,9 +12,6 @@ import { ALL_INSTALL_TARGETS } from "./install";
 const input = {
   hasShim: true,
   legacyPaths: [],
-  traceEnabled: false,
-  fffBinaryPath: "/Users/u/.local/bin/fff-mcp",
-  fffCorpusRoot: "/Users/u/.dev/trace-search",
 };
 
 describe("reviewMcpLaunch", () => {
@@ -33,26 +30,6 @@ describe("reviewMcpLaunch", () => {
 });
 
 describe("connectPrompt", () => {
-  it("adds optional trace search only for supported harnesses when enabled", () => {
-    for (const target of ALL_INSTALL_TARGETS) {
-      const disabled = connectPrompt(target, input);
-      const enabled = connectPrompt(target, { ...input, traceEnabled: true });
-      expect(disabled).not.toContain(input.fffCorpusRoot);
-      expect(disabled).not.toContain("npm:@ff-labs/pi-fff");
-
-      const mcpTrace = target === "claude" || target === "codex";
-
-      expect(enabled.includes(input.fffCorpusRoot)).toBe(mcpTrace);
-      expect(enabled.includes(input.fffBinaryPath)).toBe(mcpTrace);
-      expect(enabled.includes("pi install npm:@ff-labs/pi-fff")).toBe(
-        target === "pi",
-      );
-      expect(enabled.includes("omp install npm:@ff-labs/pi-fff")).toBe(
-        target === "omp",
-      );
-    }
-  });
-
   it("registers the Claude plugin's MCP server directly on Windows instead of the plugin", () => {
     for (const [target, add] of [
       [

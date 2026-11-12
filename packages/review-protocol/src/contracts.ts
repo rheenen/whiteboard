@@ -1,8 +1,4 @@
 import { type JsonObject, type JsonValue, isJsonObject } from "@dev.fast/json";
-import {
-  ReviewAgentTraceEventSchema,
-  ReviewAgentTraceSessionSchema,
-} from "@dev.fast/trace-protocol";
 import { z } from "zod";
 
 import type { BoardIconKind } from "./board-icons.js";
@@ -53,7 +49,7 @@ const reviewDiffSideSchema = z.enum(["base", "head"], {
   error: "must be base or head",
 });
 
-export const reviewViewSchema = z.enum(["review", "diff", "map", "trace"]);
+export const reviewViewSchema = z.enum(["review", "diff", "map"]);
 
 export type ReviewView = z.infer<typeof reviewViewSchema>;
 
@@ -711,22 +707,8 @@ export interface ReviewCanvasSetupActions {
  * canvas update.
  */
 export interface ReviewCanvasInstallActions {
-  apply(request: {
-    shim?: boolean;
-    trace?:
-      | true
-      | {
-          endpoint?: string;
-          bucket?: string;
-          region?: string;
-          key?: string;
-          secret?: string;
-        };
-  }): Promise<ReviewCliInstallStatus>;
-  remove(request: {
-    shim?: boolean;
-    trace?: true;
-  }): Promise<ReviewCliInstallStatus>;
+  apply(request: { shim?: boolean }): Promise<ReviewCliInstallStatus>;
+  remove(request: { shim?: boolean }): Promise<ReviewCliInstallStatus>;
   removeLegacySkills(): Promise<ReviewCliInstallStatus>;
   finishUpdate(): Promise<ReviewCliInstallStatus>;
   decline(): Promise<ReviewCliInstallStatus>;
@@ -1662,7 +1644,6 @@ export const ReviewCliInstallStampSchema = z.object({
   }),
   fingerprint: requiredString.optional(),
   shimPath: requiredString.optional(),
-  traceManaged: z.boolean().optional(),
   /** Windows: the directory the install put on the saved user PATH. A running
    * process keeps its startup PATH, so this is what says new terminals will
    * find the command. */
@@ -1670,7 +1651,8 @@ export const ReviewCliInstallStampSchema = z.object({
   updatedAt: requiredString,
 });
 // z.object (not strictObject) so stamps from earlier versions parse; their
-// extra fields (targets, fffRegistrations, mcpRegistrations) are dropped.
+// extra fields (targets, fffRegistrations, mcpRegistrations, traceManaged)
+// are dropped.
 
 export type ReviewCliInstallStamp = z.infer<typeof ReviewCliInstallStampSchema>;
 
@@ -1689,26 +1671,6 @@ export const ReviewCliInstallStatusSchema = z.strictObject({
     onPath: z.boolean(),
     /** The Windows installer put this command on PATH; uninstalling Whiteboard removes it. */
     installer: z.literal(true).optional(),
-  }),
-  trace: z.strictObject({
-    enabled: z.boolean(),
-    configured: z.boolean(),
-    autoActivateRepositories: z.boolean(),
-    envPath: requiredString,
-    settingsPath: requiredString,
-    endpoint: requiredString.optional(),
-    bucket: requiredString.optional(),
-    region: requiredString.optional(),
-    accessKeyIdPrefix: requiredString.optional(),
-    verifiedAt: requiredString.optional(),
-    error: requiredString.optional(),
-    // Trace storage selection (version-2 config); absent from older CLIs.
-    configPath: requiredString.optional(),
-    storageMode: z.enum(["s3", "hosted", "none"]).optional(),
-    credentialsSource: z
-      .enum(["profile", "legacy-file", "process-env", "none"])
-      .optional(),
-    captureSource: z.enum(["profile", "settings"]).optional(),
   }),
   // Null when the serving package has no built CLI (a source-run dev server).
   cli: z
@@ -1737,23 +1699,10 @@ export type ReviewCliInstallStatus = z.infer<
   typeof ReviewCliInstallStatusSchema
 >;
 
-// The command and trace configuration are per-machine. Silent app updates
-// omit `trace`, so they do not contact R2.
+// The command configuration is per-machine.
 export const ReviewCliInstallApplyRequestSchema = z.strictObject({
   shim: z.boolean().optional(),
   autoUpdate: z.boolean().optional(),
-  trace: z
-    .union([
-      z.literal(true),
-      z.strictObject({
-        endpoint: requiredString.optional(),
-        bucket: requiredString.optional(),
-        key: requiredString.optional(),
-        secret: requiredString.optional(),
-        region: requiredString.optional(),
-      }),
-    ])
-    .optional(),
 });
 
 export type ReviewCliInstallApplyRequest = z.infer<
@@ -2259,48 +2208,6 @@ export const ReviewSurfaceEventSchema = z.discriminatedUnion("event", [
 ]);
 
 export type ReviewSurfaceEvent = z.infer<typeof ReviewSurfaceEventSchema>;
-
-// --- Agent trace view & trace quotes ----------------------------------------
-
-export const ReviewAgentTraceListResponseSchema = z.discriminatedUnion("ok", [
-  z.strictObject({
-    ok: z.literal(true),
-    configured: z.boolean().default(true),
-    storage: z.enum(["s3", "hosted", "none"]).optional(),
-    sources: z.array(z.enum(["s3", "hosted"])).optional(),
-    storageError: requiredString.optional(),
-    sessions: z.array(ReviewAgentTraceSessionSchema),
-  }),
-  ReviewErrorResponseSchema,
-]);
-
-export type ReviewAgentTraceListResponse = z.infer<
-  typeof ReviewAgentTraceListResponseSchema
->;
-
-export const ReviewAgentTraceResponseSchema = z.discriminatedUnion("ok", [
-  z.strictObject({
-    ok: z.literal(true),
-    parserVersion: requiredString,
-    session: ReviewAgentTraceSessionSchema,
-    trace: stringAllowEmpty.nullable().optional(),
-    // Whether the store confirmed this copy; absent from older CLIs.
-    cacheStatus: z.enum(["current", "offline", "stale"]).optional(),
-    subagents: z.array(requiredString).default([]),
-    title: z.string().nullable(),
-    startedAt: z.string().nullable(),
-    endedAt: z.string().nullable(),
-    activeMs: z.number().nullable(),
-    userTurns: z.number(),
-    toolCalls: z.number(),
-    events: z.array(ReviewAgentTraceEventSchema),
-  }),
-  ReviewErrorResponseSchema,
-]);
-
-export type ReviewAgentTraceResponse = z.infer<
-  typeof ReviewAgentTraceResponseSchema
->;
 
 export const REVIEW_FEEDBACK_CAMPAIGN = "whiteboard-feedback-2026-10";
 

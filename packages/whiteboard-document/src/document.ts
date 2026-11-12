@@ -328,7 +328,7 @@ export function boardLinks(board: string, document: Block[]): BoardLinkRef[] {
   );
 }
 
-/** Inline trace quotes keep paragraph/list layout while using retained resources. */
+/** Parses an inline trace quote link, which stored boards may still hold. */
 export function traceQuoteLink(
   href: string,
 ): { traceId: string; eventId: string } | undefined {
@@ -342,14 +342,15 @@ export function traceQuoteLink(
     : undefined;
 }
 
+export const TRACE_QUOTES_UNSUPPORTED =
+  "Trace quotes are not supported in this build.";
+
 export function resourceReference(
   block: Block,
-): { id: string; kind: "image" | "trace" | "map" } | undefined {
+): { id: string; kind: "image" | "map" } | undefined {
   switch (block.type) {
     case "image":
       return { id: block.assetId, kind: "image" };
-    case "trace_quote":
-      return { id: block.traceId, kind: "trace" };
     case "software_map":
       return { id: block.mapVersionId, kind: "map" };
     default:
@@ -358,13 +359,20 @@ export function resourceReference(
 }
 
 export function resourceReferences(document: Block[]): Block[] {
+  return elements(document).flatMap((block): Block[] =>
+    block.type === "image" || block.type === "software_map" ? [block] : [],
+  );
+}
+
+/**
+ * Every trace quote in a document: its blocks, and its inline
+ * whiteboard:trace links as blocks. Stored boards keep theirs; a write that
+ * adds one is rejected.
+ */
+export function traceQuoteReferences(document: Block[]): Block[] {
   return elements(document).flatMap((block): Block[] => {
     if (block.type !== "markdown")
-      return block.type === "image" ||
-        block.type === "trace_quote" ||
-        block.type === "software_map"
-        ? [block]
-        : [];
+      return block.type === "trace_quote" ? [block] : [];
 
     return blockNodes(block).flatMap((node): Block[] => {
       if (
@@ -374,9 +382,9 @@ export function resourceReferences(document: Block[]): Block[] {
         return [];
       const quote = traceQuoteLink(node.url ?? "");
 
-      if (!quote) throw new ReviewInputError("Invalid trace quote link.");
-
-      return [{ type: "trace_quote", ...quote, text: markdownText(node) }];
+      return quote
+        ? [{ type: "trace_quote", ...quote, text: markdownText(node) }]
+        : [];
     });
   });
 }
@@ -436,7 +444,7 @@ function documentReferences(
         const href = canonicalLink(node.url ?? "");
 
         if (!href.startsWith("whiteboard:source/")) {
-          // Trace links are checked by resourceReferences.
+          // Trace links are checked by traceQuoteReferences.
           if (href.startsWith("whiteboard:trace/")) return [];
 
           // Board links are checked against the store on write.

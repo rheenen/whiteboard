@@ -2,6 +2,7 @@ import { fontSize, leading, radius, space } from "@canvas/scale.stylex";
 import {
   type Block,
   type BlockType,
+  TRACE_QUOTES_UNSUPPORTED,
   anchorSelection,
   boardLink,
   traceQuoteLink,
@@ -35,7 +36,6 @@ import { AnchorLink, ReviewSection } from "./review-components";
 import { ReviewDocumentTitle } from "./review-document-surface";
 import { SoftwareMap } from "./software-map/SoftwareMap";
 import { tokens } from "./tokens.stylex";
-import { TraceQuote } from "./trace-quote";
 
 /** A block the store has written: ids are assigned before any write. */
 export type StoredBlock = Block & { id: string };
@@ -98,24 +98,9 @@ function MarkdownBlock({ node, data }: BlockProps<"markdown">) {
             </BoardLink>
           );
 
-        const quote = traceQuoteLink(href);
-
-        if (quote) {
-          const trace = data.traces.get(quote.traceId);
-
-          const event = trace?.events.findIndex(
-            (item) => item.id === quote.eventId,
-          );
-
-          if (event === undefined || event < 0)
-            return <q data-unavailable="trace">{children}</q>;
-
-          return (
-            <TraceQuote sessionId={quote.traceId} event={event}>
-              {children}
-            </TraceQuote>
-          );
-        }
+        // Trace quotes are retired: a stored one reads as plain words.
+        if (traceQuoteLink(href))
+          return <q data-unavailable="trace">{children}</q>;
 
         const anchor = data.anchors.get(`${node.id}:${href}`);
 
@@ -245,32 +230,19 @@ function ImageBlock({ node, data }: BlockProps<"image">) {
   );
 }
 
-// The store checked the quote against its trace at write time; if the trace
-// cannot be loaded now, the words still show instead of the canvas failing.
-function TraceQuoteBlock({ node, data }: BlockProps<"trace_quote">) {
-  const trace = data.traces.get(node.traceId);
-
-  const event =
-    trace?.events.findIndex((item) => item.id === node.eventId) ?? -1;
-
-  if (!trace || event < 0)
-    return (
-      <blockquote
-        data-unavailable="trace"
-        {...stylex.props(
-          documentStyles.serif,
-          documentStyles.column,
-          drawStyles.blockChild,
-        )}
-      >
-        {node.text}
-      </blockquote>
-    );
-
+// Trace quotes are retired; a stored one keeps its board loading.
+function TraceQuoteBlock() {
   return (
-    <TraceQuote sessionId={node.traceId} event={event}>
-      {node.text}
-    </TraceQuote>
+    <p
+      data-unavailable="trace"
+      {...stylex.props(
+        documentStyles.column,
+        drawStyles.blockChild,
+        styles.unsupported,
+      )}
+    >
+      {TRACE_QUOTES_UNSUPPORTED}
+    </p>
   );
 }
 
@@ -425,6 +397,11 @@ export class BlockErrorBoundary extends Component<
 const inDocument = () => stylex.when.ancestor(":is(*)", documentMarker);
 
 const styles = stylex.create({
+  unsupported: {
+    color: tokens.inkMuted,
+    fontSize: fontSize.ui,
+    fontStyle: "italic",
+  },
   callout: {
     margin: { default: null, [inDocument()]: `${space.s18} 0` },
     padding: { default: null, [inDocument()]: `${space.s12} ${space.s16}` },

@@ -107,7 +107,7 @@ it("imports a document shared without a GitHub repository as a board of its own"
   ]);
 });
 
-it("retains trace resources on a document without source pins and leaves images unshared", async () => {
+it("leaves images unshared on a document without source pins", async () => {
   const local = await fixture();
 
   const resources = await createShareFixture(
@@ -128,27 +128,18 @@ it("retains trace resources on a document without source pins and leaves images 
     },
   });
 
-  const source = await exportShare(resources);
-
   const assetId = resources.imageId;
-  const [traceId] = Object.keys(source.traces);
 
-  for (const content of [
-    { type: "image", assetId, alt: "Attached image" },
-    {
-      type: "trace_quote",
-      traceId,
-      eventId: "request",
-      text: "Please compute the answer.",
-    },
-  ])
-    await resources.store.execute({
-      operation: {
-        type: "edit",
-        reviewId,
-        edit: { type: "insert", content },
+  await resources.store.execute({
+    operation: {
+      type: "edit",
+      reviewId,
+      edit: {
+        type: "insert",
+        content: { type: "image", assetId, alt: "Attached image" },
       },
-    });
+    },
+  });
 
   const bundle = await exportShare({
     store: resources.store,
@@ -168,19 +159,11 @@ it("retains trace resources on a document without source pins and leaves images 
 
   const api = createReviewApi(local.store, local.data);
   const copy = local.store.read(id).document;
-  const quote = copy.find((block) => block.type === "trace_quote");
 
   expect(copy.find((block) => block.type === "image")).toMatchObject({
     assetId,
   });
   expect((await api.request(`/${id}/resources/${assetId}`)).status).toBe(404);
-
-  const response = await api.request(
-    `/${id}/resources/${quote?.type === "trace_quote" && quote.traceId}`,
-  );
-
-  expect(response.status).toBe(200);
-  expect((await response.json()).events).toHaveLength(2);
 });
 
 it("rejects source-dependent content disguised as a document-only share", async () => {

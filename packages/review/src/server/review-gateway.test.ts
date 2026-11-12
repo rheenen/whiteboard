@@ -225,7 +225,6 @@ it("captures a remote review's canvas events locally and refuses local-only rout
 
   for (const [method, route] of [
     ["POST", "open"],
-    ["GET", "agent-traces"],
     ["GET", "workspaces"],
     ["POST", "environment"],
   ] as const) {

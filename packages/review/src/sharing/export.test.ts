@@ -76,20 +76,6 @@ async function fixture() {
     },
   });
 
-  const traceId = randomUUID();
-  await local.data.upload({
-    kind: "trace",
-    id: traceId,
-    repositoryId: repository.id,
-    trace: {
-      label: "Retained conversation",
-      events: [
-        { id: "one", role: "user", text: "Change the answer." },
-        { id: "two", role: "assistant", text: "Changed it to two." },
-      ],
-    },
-  });
-
   for (const content of [
     {
       type: "code_peek",
@@ -108,12 +94,6 @@ async function fixture() {
         fromLine: 1,
         toLine: 1,
       }),
-    },
-    {
-      type: "trace_quote",
-      traceId,
-      eventId: "one",
-      text: "Change the answer.",
     },
   ])
     await local.store.execute({
@@ -209,23 +189,23 @@ it("exports a review saved with the retired section status and imports a bundle 
 
       const db = new DatabaseSync(path.join(root, "review.db"));
       db.prepare(
-        `UPDATE versions SET snapshot=json_set(snapshot,'$.document[3].status','in_progress') WHERE review_id=? AND version=?`,
+        `UPDATE versions SET snapshot=json_set(snapshot,'$.document[2].status','in_progress') WHERE review_id=? AND version=?`,
       ).run(reviewId, version);
       db.close();
 
       const exported = await exportShare({ ...local, reviewId, repository });
       const { snapshot } = validateShareBundle(exported);
-      expect(snapshot.document[3]).toMatchObject({ title: "Notes" });
-      expect(snapshot.document[3]).not.toHaveProperty("status");
+      expect(snapshot.document[2]).toMatchObject({ title: "Notes" });
+      expect(snapshot.document[2]).not.toHaveProperty("status");
 
       return withLegacySectionStatus(exported);
     },
   );
 
-  expect((bundle.snapshot.document as JsonObject[])[3]).toMatchObject({
+  expect((bundle.snapshot.document as JsonObject[])[2]).toMatchObject({
     status: "complete",
   });
-  const shared = recipient.store.read(id).document[3];
+  const shared = recipient.store.read(id).document[2];
   expect(shared).toMatchObject({ type: "section", title: "Notes" });
   expect(shared).not.toHaveProperty("status");
 });
@@ -289,7 +269,7 @@ it("shares a review's lenses and reads a bundle that holds them as document bloc
   expect(JSON.stringify(shared.document)).not.toContain("file_lens");
 });
 
-it("fetches pinned source into an independent repository and retains complete traces offline", async () => {
+it("fetches pinned source into an independent repository", async () => {
   const { id, repo, app, recipient } = await importFixture();
   expect(recipient.store.read(id).origin?.branch).toBe("feature/shared-head");
   await rename(repo, repo + "-hidden");
@@ -312,18 +292,6 @@ it("fetches pinned source into an independent repository and retains complete tr
       expect.objectContaining({ path: "renamed.ts", status: "renamed" }),
     ]),
   );
-
-  const quote = recipient.store
-    .read(id)
-    .document.find((block) => block.type === "trace_quote");
-
-  const trace = await (
-    await app.request(
-      `/${id}/resources/${quote?.type === "trace_quote" && quote.traceId}`,
-    )
-  ).json();
-
-  expect(trace.events).toHaveLength(2);
 });
 
 it("rejects an invalid bundle", async () => {

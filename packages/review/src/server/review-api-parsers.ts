@@ -53,7 +53,7 @@ export function parseReviewBugReportInput(value: JsonValue) {
 export const ReviewTabTelemetryInputSchema = z
   .strictObject({
     tab: z.enum(REVIEW_TELEMETRY_TABS, {
-      error: "must be review, commits, map, files, or trace",
+      error: "must be review, commits, map, or files",
     }),
     reason: z.enum(["tab_change", "visibility_hidden", "pagehide", "unmount"], {
       error: "must be tab_change, visibility_hidden, pagehide, or unmount",

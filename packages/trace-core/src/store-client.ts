@@ -2,50 +2,48 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { type JsonValue, parseJsonText } from "@dev.fast/json";
-import {
-  type BeginUploadRequest,
-  type BeginUploadResponse,
-  type CompleteUploadRequest,
-  type CompleteUploadResponse,
-  type CreateStoreRequest,
-  DEVICE_CODE_PATH,
-  DEVICE_TOKEN_PATH,
-  type DeleteStoreResponse,
-  type ListSessionsQuery,
-  type ListSessionsResponse,
-  type ListUploadsQuery,
-  type ListUploadsResponse,
-  SESSION_PATH,
-  type StoreErrorCode,
-  type StoreResponse,
-  TRACE_STORE_CLIENT_ID,
-  beginUploadResponseSchema,
-  completeUploadResponseSchema,
-  deleteStoreResponseSchema,
-  listSessionsResponseSchema,
-  listUploadsResponseSchema,
-  storeErrorCodeSchema,
-  storeErrorEnvelopeSchema,
-  storeResponseSchema,
-  storeRoutes,
-} from "@dev.fast/trace-protocol";
 import { z } from "zod";
 
-import { requestStoreAuthorization } from "./store-authorization";
 import { devReviewHome } from "./trace-home";
+
+const DEVICE_CODE_PATH = "/api/auth/device/code";
+
+const DEVICE_TOKEN_PATH = "/api/auth/device/token";
+
+const SESSION_PATH = "/api/auth/get-session";
+
+const STORE_CLIENT_ID = "review-cli";
+
+const storeErrorCodeSchema = z.enum([
+  "unauthorized",
+  "repository_authorization_required",
+  "forbidden",
+  "not_found",
+  "invalid_request",
+  "payload_too_large",
+  "github_unavailable",
+  "upload_incomplete",
+  "stale_upload",
+  "store_deleted",
+  "upgrade_required",
+  "internal",
+]);
+
+export type StoreErrorCode = z.infer<typeof storeErrorCodeSchema>;
+
+const storeErrorEnvelopeSchema = z.object({
+  error: z.object({ code: storeErrorCodeSchema, message: z.string() }),
+});
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Largest metadata answer the client reads; object bytes never come this way. */
+/** Largest answer the client reads. */
 const MAX_STORE_RESPONSE_BYTES = 8 * 1024 * 1024;
 
-/**
- * The message for a store whose responses do not match this client's
- * contract. A 0.1 store, for example, answers a begin call without an
- * `uploadId`.
- */
+/** The message for a store whose responses do not match this client's
+ * contract. */
 export const STORE_UPGRADE_REQUIRED_MESSAGE =
-  "The trace store does not support this version of Review. Update Review or use a matching store.";
+  "The store does not support this version of Review. Update Review or use a matching store.";
 
 /**
  * The OAuth device-flow error shape used by the Better Auth device
@@ -81,8 +79,8 @@ export class HostedStoreDisabledError extends StoreApiError {
 export const SHARING_DISABLED_ENV = "DEV_REVIEW_SHARING_DISABLED";
 
 /** A file in the Review home that says this user turned sharing off, for
- * example with the Desktop setting. Every process reads it, also the agent
- * trace hooks that the Desktop server did not start. */
+ * example with the Desktop setting. Every process reads it, also the ones
+ * the Desktop server did not start. */
 export const SHARING_DISABLED_MARKER = "sharing-disabled";
 
 export function sharingMarkerPath(env: NodeJS.ProcessEnv = process.env) {
@@ -146,7 +144,7 @@ interface SessionResponse {
 
 export class StoreClient {
   private readonly origin: string;
-  private token: string | undefined;
+  private readonly token: string | undefined;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly env: NodeJS.ProcessEnv;
@@ -164,29 +162,10 @@ export class StoreClient {
     if (hostedStoreDisabled(this.env)) throw new HostedStoreDisabledError();
   }
 
-  async listOwnUploads(
-    repositoryId: number,
-    query: ListUploadsQuery = {},
-  ): Promise<ListUploadsResponse> {
-    const params = new URLSearchParams();
-
-    if (query.session !== undefined) params.set("session", query.session);
-
-    if (query.cursor !== undefined) params.set("cursor", query.cursor);
-
-    if (query.limit !== undefined) params.set("limit", String(query.limit));
-
-    return this.get(
-      storeRoutes.ownUploads(repositoryId),
-      listUploadsResponseSchema,
-      params,
-    );
-  }
-
-  async deviceCode(traces = true): Promise<DeviceCodeResponse> {
+  async deviceCode(): Promise<DeviceCodeResponse> {
     return this.requestJson(
       DEVICE_CODE_PATH,
-      { client_id: TRACE_STORE_CLIENT_ID, scope: traces ? "repo" : "identity" },
+      { client_id: STORE_CLIENT_ID, scope: "identity" },
       undefined,
     );
   }
@@ -201,7 +180,7 @@ export class StoreClient {
       body: JSON.stringify({
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
         device_code: deviceCode,
-        client_id: TRACE_STORE_CLIENT_ID,
+        client_id: STORE_CLIENT_ID,
       }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
@@ -230,7 +209,7 @@ export class StoreClient {
 
     // SAFETY: a 2xx from the device token endpoint carries the OAuth
     // device-flow success body, which this client does not validate against
-    // a zod schema because it is not part of the trace-protocol contract.
+    // a zod schema because it is not part of the store contract.
     return (await response.json()) as { access_token: string };
   }
 
@@ -245,82 +224,6 @@ export class StoreClient {
           githubLogin: z.string().nullish(),
         }),
       }),
-    );
-  }
-
-  async createStore(body: CreateStoreRequest): Promise<StoreResponse> {
-    return this.requestJson(storeRoutes.stores(), body, storeResponseSchema);
-  }
-
-  async findStore(query: CreateStoreRequest): Promise<StoreResponse | null> {
-    try {
-      return await this.get(
-        storeRoutes.stores(),
-        storeResponseSchema,
-        new URLSearchParams({ owner: query.owner, name: query.name }),
-      );
-    } catch (error) {
-      if (error instanceof StoreApiError && error.code === "not_found") {
-        return null;
-      }
-
-      throw error;
-    }
-  }
-
-  async beginUpload(
-    repositoryId: number,
-    sessionId: string,
-    body: BeginUploadRequest,
-  ): Promise<BeginUploadResponse> {
-    return this.requestJson(
-      storeRoutes.uploads(repositoryId, sessionId),
-      body,
-      beginUploadResponseSchema,
-    );
-  }
-
-  async completeUpload(
-    repositoryId: number,
-    sessionId: string,
-    uploadId: string,
-    body: CompleteUploadRequest,
-  ): Promise<CompleteUploadResponse> {
-    return this.requestJson(
-      storeRoutes.uploadComplete(repositoryId, sessionId, uploadId),
-      body,
-      completeUploadResponseSchema,
-    );
-  }
-
-  /** Deletion is logical; the store answers 202 while an operator removes the objects. */
-  async deleteStore(repositoryId: number): Promise<DeleteStoreResponse> {
-    return this.send(
-      "DELETE",
-      storeRoutes.store(repositoryId),
-      undefined,
-      deleteStoreResponseSchema,
-    );
-  }
-
-  async listSessions(
-    repositoryId: number,
-    query: ListSessionsQuery,
-  ): Promise<ListSessionsResponse> {
-    const params = new URLSearchParams();
-
-    if (query.commit) params.set("commit", query.commit);
-
-    if (query.session) params.set("session", query.session);
-
-    if (query.limit !== undefined) params.set("limit", String(query.limit));
-
-    if (query.cursor) params.set("cursor", query.cursor);
-
-    return this.get(
-      storeRoutes.sessions(repositoryId),
-      listSessionsResponseSchema,
-      params,
     );
   }
 
@@ -350,7 +253,7 @@ export class StoreClient {
   }
 
   private async send<T, Body>(
-    method: "GET" | "POST" | "DELETE",
+    method: "GET" | "POST",
     path: string,
     body: Body | undefined,
     schema: z.ZodType<T> | undefined,
@@ -382,21 +285,7 @@ export class StoreClient {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
 
-    if (!response.ok) {
-      const error = await this.toStoreApiError(response);
-
-      if (error.code === "repository_authorization_required") {
-        const token = await requestStoreAuthorization(this.origin);
-
-        if (token) {
-          this.token = token;
-
-          return this.send(method, path, body, schema, query);
-        }
-      }
-
-      throw error;
-    }
+    if (!response.ok) throw await this.toStoreApiError(response);
 
     const contentLength = Number(response.headers.get("content-length") ?? "0");
 
@@ -404,7 +293,7 @@ export class StoreClient {
       throw new StoreApiError(
         "internal",
         response.status,
-        `The trace store answered ${contentLength} bytes; the client accepts at most ${MAX_STORE_RESPONSE_BYTES}.`,
+        `The store answered ${contentLength} bytes; the client accepts at most ${MAX_STORE_RESPONSE_BYTES}.`,
       );
     }
 
@@ -419,7 +308,7 @@ export class StoreClient {
 
     if (!schema) {
       // SAFETY: only session() omits a schema. The caller defines that private
-      // response because it is not part of the trace-protocol contract.
+      // response because it is not part of the store contract.
       return raw as T;
     }
 

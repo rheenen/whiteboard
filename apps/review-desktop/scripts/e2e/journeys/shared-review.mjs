@@ -129,8 +129,11 @@ async function journey(ctx, share, service, bundles) {
 
   const canvas = page.locator(".review-canvas-root [data-review-api]");
 
-  await canvas.getByText("The answer is 42.").first().waitFor();
-  ctx.check("the shared document and trace quote render");
+  await canvas
+    .getByText(/This review reads pinned GitHub commits/)
+    .first()
+    .waitFor();
+  ctx.check("the shared document renders");
 
   await rename(
     share.repo,

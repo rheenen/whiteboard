@@ -48,8 +48,9 @@ The product is named Whiteboard, but package names and directories still use
 - `packages/review/` contains the `whiteboard` command-line interface, embedded
   server, and canvas.
 - `packages/review-protocol/` contains the shared process contracts.
-- `packages/trace-core/` and `packages/trace-protocol/` contain agent trace
-  capture and the hosted trace store contract.
+- `packages/trace-core/` contains shared file and process helpers, the hosted
+  service login, and the cleanup of hooks that earlier builds installed for
+  agent trace capture.
 - `packages/agent-plugins/` contains the plugins and skills for supported
   coding agents.
 - `packages/local-vcs/` contains local version-control helpers.

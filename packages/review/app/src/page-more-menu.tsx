@@ -33,7 +33,7 @@ export function PageMoreMenu({
   folded = [],
   onOpenContents,
 }: {
-  /** Offered views without a sidebar tab, such as Trace. */
+  /** Offered views without a sidebar tab, such as Map. */
   views: readonly { view: ReviewView; label: string }[];
   onShowView(view: ReviewView): void;
   folded?: readonly PageMoreFolded[];

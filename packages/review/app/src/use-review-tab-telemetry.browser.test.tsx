@@ -38,7 +38,6 @@ it("keeps dwell continuous through live review updates and beacons it through th
     pins: { base: "base", head: "head" },
     historicalRevision: null,
     updatedAtMs: 0,
-    traces: new Map(),
     place: async () => ({ siblings: [] }),
     stack: async () => ({ layers: [] }),
     createBranchReview: async () => "",

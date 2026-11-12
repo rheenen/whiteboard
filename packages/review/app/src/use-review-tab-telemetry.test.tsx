@@ -31,5 +31,4 @@ it("reports the in-tab Diff view under the original files tab name", () => {
   expect(reviewTelemetryTab("diff")).toBe("files");
   expect(reviewTelemetryTab("review")).toBe("review");
   expect(reviewTelemetryTab("map")).toBe("map");
-  expect(reviewTelemetryTab("trace")).toBe("trace");
 });

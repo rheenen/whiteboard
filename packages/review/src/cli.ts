@@ -13,6 +13,8 @@ import {
   parseJsonText,
 } from "@dev.fast/review-protocol";
 
+import { isRetiredTraceHook } from "./retired-trace-hooks";
+
 // A standalone build (npx/global install) defers to the CLI bundled with a
 // running Review Desktop so the CLI can never skew from the server it talks
 // to. Checkout runs execute src/cli.ts via tsx and therefore never delegate.
@@ -22,9 +24,12 @@ const argv = process.argv.slice(2);
 
 const ownCliPath = fileURLToPath(import.meta.url);
 
-const delegatedExitCode = await maybeDelegateToDesktopCli(argv);
+if (isRetiredTraceHook(argv)) process.exitCode = 0;
+else {
+  const delegatedExitCode = await maybeDelegateToDesktopCli(argv);
 
-process.exitCode = delegatedExitCode ?? (await runCli(ownCliPath));
+  process.exitCode = delegatedExitCode ?? (await runCli(ownCliPath));
+}
 
 async function runCli(effectivePath: string): Promise<number> {
   if (!supportedNodeRuntime()) {

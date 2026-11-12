@@ -428,119 +428,6 @@ it("moves a board to Trash without changing the saved document", async () => {
   expect(store.read(reviewId).version).toBe(0);
 });
 
-it.each([false, true])(
-  "adds a retained trace (inline=%s) live and opens its full conversation",
-  async (inline) => {
-    const review = await command({
-      type: "create",
-      title: "Retained conversation",
-      target: { kind: "commits", ...pins },
-    });
-
-    const traceId = randomUUID();
-
-    const trace = {
-      label: "Imported authoring conversation",
-      events: [
-        { id: "question", role: "user", text: "Keep the original components." },
-        {
-          id: "answer",
-          role: "assistant",
-          text: "The source remains pinned while the canvas changes.",
-        },
-        { id: "result", role: "tool", text: "Saved successfully." },
-      ],
-    };
-
-    const app = new Hono().route("/reviews-api", createReviewApi(store));
-    app.get("/reviews-api/:id/commits", (context) => context.json([]));
-    app.get("/reviews-api/:id/agent-traces", (context) =>
-      context.json({ ok: true, sessions: [] }),
-    );
-    app.get(`/reviews-api/${review.reviewId}/resources/${traceId}`, (context) =>
-      context.json(trace),
-    );
-
-    const bridge = testReviewBridge(
-      {},
-      {
-        request: async (url, init) => app.request(url, init),
-        diffView: {
-          files: async () => [],
-          create: () => {
-            throw new Error("Diff is not used here.");
-          },
-        },
-      },
-    );
-
-    const container = document.createElement("div");
-    document.body.append(container);
-    await act(async () => {
-      canvas = mount(container, {
-        kind: "api",
-        reviewId: review.reviewId,
-        bridge,
-      });
-    });
-
-    const traceTab = () =>
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Trace",
-      );
-
-    await act(async () => {
-      await vi.waitFor(() =>
-        expect(container.querySelector("h1")?.textContent).toBe(
-          "Retained conversation",
-        ),
-      );
-    });
-    await vi.waitFor(() => expect(traceTab()).toBeUndefined());
-    await act(async () => {
-      await command({
-        type: "edit",
-        reviewId: review.reviewId,
-        edit: {
-          type: "insert",
-          content: inline
-            ? {
-                type: "markdown",
-                markdown: `- Before [source remains pinned](review-trace:${traceId}#answer) after.`,
-              }
-            : {
-                type: "trace_quote",
-                traceId,
-                eventId: "answer",
-                text: "source remains pinned",
-              },
-        },
-      });
-    });
-    await act(async () => {
-      await vi.waitFor(() => expect(traceTab()).toBeTruthy());
-    });
-    expect(container.querySelector('a[href^="#trace-"]')).toBeTruthy();
-
-    expect(container.querySelector("li")?.textContent).toBe(
-      inline ? "Before source remains pinned after." : undefined,
-    );
-    await act(async () => traceTab()!.click());
-    await act(async () => {
-      await vi.waitFor(() =>
-        expect(container.textContent).toContain(
-          "Imported authoring conversation",
-        ),
-      );
-    });
-    expect(container.textContent).toContain("Keep the original components.");
-    expect(container.textContent).toContain(
-      "The source remains pinned while the canvas changes.",
-    );
-    expect(container.textContent).not.toContain("Unable to load trace");
-  },
-);
-
 it("renders a code peek block on its pinned side without fetching source text", async () => {
   const review = await command({
     type: "create",
@@ -1712,15 +1599,10 @@ it("keeps the open peeks and Diff view when the host's source windows go away an
   expect(diffs).toHaveLength(1);
 });
 
-it.each([
-  { host: undefined, shown: true },
-  { host: "devbox", shown: false },
-])(
-  "shows the share control, and the trace tab only for a laptop review (host $host)",
+it.each([{ host: undefined }, { host: "devbox" }])(
+  "shows the share control (host $host)",
   async ({ host }) => {
-    const shown = host === undefined;
-
-    const { button, requested } = await mountPeekReview({
+    const { button } = await mountPeekReview({
       host,
       ...(host && {
         available: { sourceWindows: false },
@@ -1728,12 +1610,8 @@ it.each([
     });
 
     await act(async () => {
-      await vi.waitFor(() => expect(Boolean(button("Trace"))).toBe(shown));
+      await vi.waitFor(() => expect(button("Share review")).toBeDefined());
     });
-    expect(button("Share review")).toBeDefined();
-    expect(requested.some((path) => path.endsWith("/agent-traces"))).toBe(
-      shown,
-    );
   },
 );
 

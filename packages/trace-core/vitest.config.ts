@@ -13,9 +13,6 @@ export default defineConfig({
       "@dev.fast/local-vcs": fileURLToPath(
         new URL("../local-vcs/src/index.ts", import.meta.url),
       ),
-      "@dev.fast/trace-protocol": fileURLToPath(
-        new URL("../trace-protocol/src/index.ts", import.meta.url),
-      ),
     },
   },
   test: {
@@ -28,7 +25,6 @@ export default defineConfig({
         os.tmpdir(),
         `trace-core-tests-${process.pid}`,
       ),
-      GITHUB_REPOSITORY: "",
     },
   },
 });
